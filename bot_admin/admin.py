@@ -1,11 +1,11 @@
 from django.contrib import admin
+from django.utils.html import format_html
+
 from .models import (
-    BotUser, Referral, Plan, UserPlan, Payment, RequestUsage, UserStatistics, 
+    BotUser, Referral, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
     ReferralHistory, PromoCode, Chat, ChatMessage
 )
-from django.utils.html import format_html
-from django.core.exceptions import FieldDoesNotExist
-from functools import update_wrapper
+
 
 # Базовый класс для админки с русскими названиями столбцов
 class RussianColumnNameAdmin(admin.ModelAdmin):
