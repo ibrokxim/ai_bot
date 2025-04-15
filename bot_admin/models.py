@@ -42,8 +42,8 @@ class BotUser(models.Model):
         return False
 
     class Meta:
-        managed = False  # Говорим Django не управлять таблицей
-        db_table = 'users'  # Указываем имя существующей таблицы
+        managed = True  # Django будет управлять таблицей
+        db_table = 'users'  # Указываем имя таблицы
         verbose_name = 'Пользователь бота'
         verbose_name_plural = 'Пользователи бота'
         ordering = ['-registration_date']  # Сортировка по дате регистрации (сначала новые)
@@ -58,7 +58,7 @@ class Referral(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'referrals'
         verbose_name = 'Реферальная ссылка'
         verbose_name_plural = 'Реферальные ссылки'
@@ -83,7 +83,7 @@ class Plan(models.Model):
     features = models.JSONField(null=True, blank=True)  # Дополнительные возможности в формате JSON
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'plans'
         verbose_name = 'Тарифный план'
         verbose_name_plural = 'Тарифные планы'
@@ -93,7 +93,7 @@ class Plan(models.Model):
         return f"{self.name} ({self.requests} запросов, {self.price} руб.)"
 
 class UserPlan(models.Model):
-    id = models.AutoField(primary_key=True)
+    """Модель связи пользователя с тарифным планом"""
     user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
     plan = models.ForeignKey(Plan, on_delete=models.CASCADE, db_column='plan_id')
     activated_at = models.DateTimeField(auto_now_add=True)
@@ -106,12 +106,11 @@ class UserPlan(models.Model):
     requests_added = models.IntegerField(default=0)  # Количество добавленных запросов
     discount_applied = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # Применённая скидка в %
     notes = models.TextField(null=True, blank=True)  # Дополнительная информация
-
+    
     class Meta:
-        managed = False  # Django не управляет таблицей
         db_table = 'user_plans'
-        verbose_name = 'Тарифный план пользователя'
-        verbose_name_plural = 'Тарифные планы пользователей'
+        verbose_name = 'Подписка пользователя'
+        verbose_name_plural = 'Подписки пользователей'
 
     def __str__(self):
         return f"{self.user} - {self.plan}"
@@ -129,7 +128,7 @@ class Payment(models.Model):
     details = models.JSONField(null=True, blank=True)  # Детали платежа в JSON
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'payments'
         verbose_name = 'Платеж'
         verbose_name_plural = 'Платежи'
@@ -151,7 +150,7 @@ class RequestUsage(models.Model):
     response_length = models.IntegerField(default=0)  # Длина ответа в символах
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'request_usage'
         verbose_name = 'Использование запроса'
         verbose_name_plural = 'Использование запросов'
@@ -172,7 +171,7 @@ class UserStatistics(models.Model):
     account_level = models.CharField(max_length=50, default='standard')  # Уровень аккаунта
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'user_statistics'
         verbose_name = 'Статистика пользователя'
         verbose_name_plural = 'Статистика пользователей'
@@ -191,7 +190,7 @@ class ReferralHistory(models.Model):
     converted_at = models.DateTimeField(null=True, blank=True)  # Дата конверсии (например, первая покупка)
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'referral_history'
         verbose_name = 'История реферралов'
         verbose_name_plural = 'История реферралов'
@@ -215,7 +214,7 @@ class PromoCode(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False  # Django не управляет таблицей
+        managed = True  # Django будет управлять таблицей
         db_table = 'promo_codes'
         verbose_name = 'Промокод'
         verbose_name_plural = 'Промокоды'
@@ -223,6 +222,26 @@ class PromoCode(models.Model):
 
     def __str__(self):
         return f"{self.code} ({self.discount_value} {self.get_discount_type_display()})"
+
+class PromoCodeUsage(models.Model):
+    """Модель для отслеживания использования промокодов"""
+    id = models.AutoField(primary_key=True)
+    promo_code = models.ForeignKey(PromoCode, on_delete=models.CASCADE, db_column='promo_code_id')
+    user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
+    used_at = models.DateTimeField(auto_now_add=True)
+    applied_to_plan = models.ForeignKey(Plan, on_delete=models.SET_NULL, null=True, blank=True, db_column='applied_to_plan_id')
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    requests_added = models.IntegerField(default=0)
+
+    class Meta:
+        managed = True
+        db_table = 'promo_code_usages'
+        verbose_name = 'Использование промокода'
+        verbose_name_plural = 'Использования промокодов'
+        ordering = ['-used_at']
+
+    def __str__(self):
+        return f"{self.user} использовал {self.promo_code} ({self.used_at})"
 
 # Модели для чатов
 
@@ -234,7 +253,7 @@ class Chat(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False # Или True, если хотите, чтобы Django создал таблицу
+        managed = True # Или True, если хотите, чтобы Django создал таблицу
         db_table = 'chats'
         verbose_name = 'Чат'
         verbose_name_plural = 'Чаты'
@@ -253,7 +272,7 @@ class ChatMessage(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False # Или True
+        managed = True # Или True
         db_table = 'chat_messages'
         verbose_name = 'Сообщение чата'
         verbose_name_plural = 'Сообщения чата'
