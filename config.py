@@ -10,10 +10,10 @@ JWT_EXPIRATION_TIME = int(os.getenv('JWT_EXPIRATION_TIME', 3600))  # время 
 
 # Настройки базы данных
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'db': os.getenv('DB_NAME', 'bot_db'),
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'db': os.getenv('DB_NAME'),
     'charset': 'utf8mb4',
 }
 
