@@ -29,9 +29,9 @@ db = Database()
 db.init_db()  # Инициализируем базу данных и создаем таблицы
 
 # Токен бота
-TOKEN = os.getenv('BOT_TOKEN', '')
+TOKEN = os.getenv('BOT_TOKEN')
 # URL мини-приложения
-MINI_APP_URL = os.getenv('MINI_APP_URL', 'https://f35f-195-158-14-62.ngrok-free.app/')
+MINI_APP_URL = os.getenv('MINI_APP_URL')
 # Количество бонусных запросов за реферала
 REFERRAL_BONUS_REQUESTS = int(os.getenv('REFERRAL_BONUS_REQUESTS', 5))
 
