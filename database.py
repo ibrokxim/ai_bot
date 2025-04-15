@@ -251,33 +251,33 @@ class Database:
         return True
 
     def __init__(self):
-        self.host = os.getenv('DB_HOST', 'localhost')
-        self.user = os.getenv('DB_USER', 'root')
-        self.password = os.getenv('DB_PASSWORD', '')
-        self.db_name = os.getenv('DB_NAME', 'bot_db')
         self.connection = None
+        self.connect()
     
     def connect(self):
-        """Подключение к базе данных"""
+        """
+        Подключение к базе данных с использованием переменных окружения
+        """
         try:
             self.connection = pymysql.connect(
-                host=self.host,
-                user=self.user,
-                password=self.password,
-                database=self.db_name,
-                charset='utf8mb4',
+                host=os.getenv('DB_HOST', 'localhost'),
+                port=int(os.getenv('DB_PORT', 3306)),
+                user=os.getenv('DB_USER', 'root'),
+                password=os.getenv('DB_PASSWORD', ''),
+                db=os.getenv('DB_NAME', 'ai_bot'),
+                charset=os.getenv('DB_CHARSET', 'utf8mb4'),
                 cursorclass=pymysql.cursors.DictCursor
             )
-            return True
-        except Exception as e:
-            print(f"Ошибка подключения к базе данных: {e}")
-            return False
+            print("Подключение к БД MySQL успешно")
+        except pymysql.MySQLError as e:
+            print(f"Ошибка подключения к MySQL: {e}")
     
     def init_db(self):
         """Инициализация базы данных и создание необходимых таблиц"""
-        if not self.connect():
-            print("Невозможно инициализировать базу данных: ошибка подключения")
-            return False
+        if not self.connection or self.connection._closed:
+            if not self.connect():
+                print("Невозможно инициализировать базу данных: ошибка подключения")
+                return False
         
         try:
             with self.connection.cursor() as cursor:

@@ -1,6 +1,14 @@
 import sqlite3
 import datetime
+import os
+from dotenv import load_dotenv
 from app.config import DATABASE_NAME
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Получение имени базы данных из переменных окружения или использование значения по умолчанию
+DATABASE_NAME = os.getenv('SQLITE_DATABASE_NAME', 'app/database/bot.db')
 
 def init_db():
     """Инициализация базы данных"""

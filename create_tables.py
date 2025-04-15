@@ -1,78 +1,83 @@
 import mysql.connector
 from mysql.connector import Error
 import os
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Параметры подключения
+config = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'database': os.getenv('DB_NAME', 'ai_bot'),
+    'charset': os.getenv('DB_CHARSET', 'utf8mb4')
+}
 
 def create_tables():
     """Создает необходимые таблицы в базе данных"""
-    config = {
-        'host': os.getenv('DB_HOST', 'localhost'),
-        'user': os.getenv('DB_USER', 'root'),
-        'password': os.getenv('DB_PASSWORD', 'root'),
-        'database': os.getenv('DB_NAME', 'ai_bot')
-    }
-    
     try:
-        # Создаем соединение с базой данных
+        # Установка соединения
         conn = mysql.connector.connect(**config)
-        if conn is None:
-            print("Ошибка при подключении к базе данных")
-            return
         
-        cursor = conn.cursor()
-        
-        # Таблица реферальных ссылок
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS referrals (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT,
-                referral_code VARCHAR(255) UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-            )
-        ''')
-        print("Таблица referrals создана или уже существует")
-        
-        # Таблица тарифных планов
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS plans (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255),
-                requests INT,
-                price DECIMAL(10, 2),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        print("Таблица plans создана или уже существует")
-        
-        # Таблица связи пользователей с тарифными планами
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_plans (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT,
-                plan_id INT,
-                activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expired_at TIMESTAMP NULL,
-                is_active BOOLEAN DEFAULT TRUE,
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-                FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
-            )
-        ''')
-        print("Таблица user_plans создана или уже существует")
-        
-        # Добавляем базовые тарифные планы, если они еще не существуют
-        cursor.execute("SELECT COUNT(*) FROM plans")
-        if cursor.fetchone()[0] == 0:
+        if conn.is_connected():
+            cursor = conn.cursor()
+            
+            # Таблица реферальных ссылок
             cursor.execute('''
-                INSERT INTO plans (name, requests, price) VALUES 
-                ('Базовый', 50, 299.00),
-                ('Стандарт', 200, 999.00),
-                ('Премиум', 500, 1999.00)
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT,
+                    referral_code VARCHAR(255) UNIQUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                )
             ''')
-            print("Базовые тарифные планы добавлены")
-        else:
-            print("Тарифные планы уже существуют")
-        
-        conn.commit()
+            print("Таблица referrals создана или уже существует")
+            
+            # Таблица тарифных планов
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS plans (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(255),
+                    requests INT,
+                    price DECIMAL(10, 2),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            print("Таблица plans создана или уже существует")
+            
+            # Таблица связи пользователей с тарифными планами
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_plans (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT,
+                    plan_id INT,
+                    activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expired_at TIMESTAMP NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                    FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+                )
+            ''')
+            print("Таблица user_plans создана или уже существует")
+            
+            # Добавляем базовые тарифные планы, если они еще не существуют
+            cursor.execute("SELECT COUNT(*) FROM plans")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('''
+                    INSERT INTO plans (name, requests, price) VALUES 
+                    ('Базовый', 50, 299.00),
+                    ('Стандарт', 200, 999.00),
+                    ('Премиум', 500, 1999.00)
+                ''')
+                print("Базовые тарифные планы добавлены")
+            else:
+                print("Тарифные планы уже существуют")
+            
+            conn.commit()
     except Error as e:
         print(f"Ошибка при создании таблиц: {e}")
     finally:

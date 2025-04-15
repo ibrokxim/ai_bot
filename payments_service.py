@@ -3,28 +3,33 @@ from mysql.connector import Error
 import os
 from datetime import datetime, timedelta
 import json
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
 
 class PaymentService:
-    def __init__(self, config=None):
+    def __init__(self):
         """Инициализация сервиса платежей"""
-        if config is None:
-            self.config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'user': os.getenv('DB_USER', 'root'),
-                'password': os.getenv('DB_PASSWORD', 'root'),
-                'database': os.getenv('DB_NAME', 'ai_bot')
-            }
-        else:
-            self.config = config
+        self.config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'port': int(os.getenv('DB_PORT', 3306)),
+            'user': os.getenv('DB_USER', 'root'),
+            'password': os.getenv('DB_PASSWORD', ''),
+            'database': os.getenv('DB_NAME', 'ai_bot'),
+            'charset': os.getenv('DB_CHARSET', 'utf8mb4')
+        }
+        self.connection = None
             
-    def get_connection(self):
-        """Получение соединения с базой данных"""
+    def connect(self):
+        """Установка соединения с базой данных"""
         try:
             connection = mysql.connector.connect(**self.config)
-            return connection
+            if connection.is_connected():
+                return connection
         except Error as e:
-            print(f"Ошибка подключения к MySQL: {e}")
-            return None
+            print(f"Ошибка при подключении к MySQL: {e}")
+        return None
     
     def process_plan_purchase(self, user_id: int, plan_id: int, payment_details=None, promo_code=None, source='bot'):
         """
@@ -41,7 +46,7 @@ class PaymentService:
             bool: Успешность операции
             dict: Детали операции
         """
-        conn = self.get_connection()
+        conn = self.connect()
         if conn is None:
             return False, {"error": "Ошибка подключения к базе данных"}
         
@@ -256,7 +261,7 @@ class PaymentService:
             
     def get_user_requests_left(self, user_id):
         """Получает количество оставшихся запросов у пользователя"""
-        conn = self.get_connection()
+        conn = self.connect()
         if conn is None:
             return 0
         
@@ -275,7 +280,7 @@ class PaymentService:
                 
     def decrement_user_requests(self, user_id):
         """Уменьшает количество оставшихся запросов пользователя на 1"""
-        conn = self.get_connection()
+        conn = self.connect()
         if conn is None:
             return False
         
@@ -304,7 +309,7 @@ class PaymentService:
     def add_usage_record(self, user_id, request_type, ai_model, tokens_used=0, was_successful=True, 
                          request_text=None, response_length=0, response_time=None):
         """Добавляет запись об использовании API"""
-        conn = self.get_connection()
+        conn = self.connect()
         if conn is None:
             return False
         
