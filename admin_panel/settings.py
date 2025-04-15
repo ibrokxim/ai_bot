@@ -31,6 +31,10 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-your-secret-ke
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['*']
+CSRF_TRUSTED_ORIGINS = [
+    "https://api.test-medical.uz",
+    "https://front.test-medical.uz",
+]
 
 
 # Application definition

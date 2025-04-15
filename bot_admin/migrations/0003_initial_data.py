@@ -77,7 +77,7 @@ def create_initial_plans(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('bot_admin', '0001_initial'),
+        ('bot_admin', '0002_initial'),  # Изменяем зависимость, чтобы миграция выполнялась после создания всех моделей
     ]
 
     operations = [
