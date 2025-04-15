@@ -1,5 +1,4 @@
 import asyncio
-
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from database import Database
@@ -10,10 +9,8 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Загрузка переменных окружения
 load_dotenv()
 
-# Конфигурация базы данных
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
     'user': os.getenv('DB_USER'),
@@ -21,14 +18,10 @@ DB_CONFIG = {
     'db': os.getenv('DB_NAME'),
 }
 
-# Инициализация бота и диспетчера
 bot = Bot(token=os.getenv('BOT_TOKEN'))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Инициализация базы данных с конфигурацией MySQL
-db = Database()
-db.init_db()  # Инициализируем базу данных и создаем таблицы
 
 # Токен бота
 TOKEN = os.getenv('BOT_TOKEN')
@@ -38,16 +31,14 @@ MINI_APP_URL = os.getenv('MINI_APP_URL')
 REFERRAL_BONUS_REQUESTS = int(os.getenv('REFERRAL_BONUS_REQUESTS', 5))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
     user = update.message.from_user
     chat = update.message.chat
-    
-    # Подключаемся к базе данных
+    db = Database()
+    db.init_db()
     if not db.connect():
         await update.message.reply_text("Извините, произошла ошибка при подключении к базе данных")
         return
     
-    # Получаем информацию о пользователе из базы данных
     user_data = db.get_user(user.id)
     is_new_user = user_data is None
     
