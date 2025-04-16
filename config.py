@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Настройки приложения
-SECRET_KEY = os.getenv('SECRET_KEY', 'секретный_ключ_по_умолчанию')
+SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key')
 JWT_EXPIRATION_TIME = int(os.getenv('JWT_EXPIRATION_TIME', 3600))  # время в секундах
 
 # Настройки базы данных

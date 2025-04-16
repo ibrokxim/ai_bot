@@ -67,6 +67,25 @@ MIDDLEWARE = [
 # Настройки CORS
 CORS_ALLOW_ALL_ORIGINS = True  # В продакшене заменить на конкретные домены
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-telegram-id',  # Разрешаем заголовок telegram_id
+]
+
+# Добавляем конкретные разрешенные источники (origins)
+CORS_ALLOWED_ORIGINS = [
+    "https://zms9lt5n-3000.euw.devtunnels.ms",
+    "https://front.test-medical.uz",
+    "http://localhost:3000",
+]
 
 # Настройки REST Framework
 REST_FRAMEWORK = {
@@ -168,4 +187,4 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # OpenAI API ключ
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', 'your-api-key-placeholder')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
