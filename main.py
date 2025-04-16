@@ -1,16 +1,18 @@
 import asyncio
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from database import Database
 import os
 import uuid
 import hashlib
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from database import Database
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes
 
+# Загрузка переменных окружения
 load_dotenv()
 
+# Настройки базы данных
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
     'user': os.getenv('DB_USER'),
@@ -18,34 +20,45 @@ DB_CONFIG = {
     'db': os.getenv('DB_NAME'),
 }
 
+# Отладочная информация
+print(f"Параметры подключения к БД: {DB_CONFIG['host']}, {DB_CONFIG['user']}, {DB_CONFIG['db']}")
+
+# Инициализация бота
 bot = Bot(token=os.getenv('BOT_TOKEN'))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-
-# Токен бота
-TOKEN = os.getenv('BOT_TOKEN')
-# URL мини-приложения
+# Константы
 MINI_APP_URL = os.getenv('MINI_APP_URL')
-# Количество бонусных запросов за реферала
 REFERRAL_BONUS_REQUESTS = int(os.getenv('REFERRAL_BONUS_REQUESTS', 5))
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    chat = update.message.chat
+# Обработчик команды /start
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
+    user = message.from_user
+    chat = message.chat
+    
+    # Инициализация соединения с базой данных
     db = Database()
-    db.init_db()
-    if not db.connect():
-        await update.message.reply_text("Извините, произошла ошибка при подключении к базе данных")
+    
+    # Проверка подключения к базе данных с выводом отладочной информации
+    if not db.connection or db.connection._closed:
+        print(f"Ошибка подключения к БД. Параметры: {DB_CONFIG}")
+        await message.reply("Извините, произошла ошибка при подключении к базе данных")
         return
     
+    # Инициализация БД (создание таблиц, если их нет)
+    db.init_db()
+    
+    # Получаем данные о пользователе
     user_data = db.get_user(user.id)
     is_new_user = user_data is None
     
     # Реферальная система: проверяем реферальный код, если он есть в аргументах команды
     referral_code = None
-    if context.args and len(context.args) > 0:
-        referral_code = context.args[0]
+    command_args = message.text.split()
+    if len(command_args) > 1:
+        referral_code = command_args[1]
         
         # Получаем информацию о владельце реферального кода
         referral_info = db.get_referral(referral_code)
@@ -119,7 +132,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Добавляем информацию о реферальной программе
     if user_ref_code:
-        bot_username = context.bot.username
+        bot_username = (await bot.get_me()).username
         ref_link = f"https://t.me/{bot_username}?start={user_ref_code}"
         
         welcome_text += (
@@ -129,54 +142,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     # Создаем кнопки для мини-приложения
-    keyboard = [
-        [InlineKeyboardButton("🌐 Открыть мини-приложение", web_app=WebAppInfo(url=MINI_APP_URL))]
-    ]
+    builder = InlineKeyboardBuilder()
+    builder.add(types.InlineKeyboardButton(
+        text="🌐 Открыть мини-приложение", 
+        web_app=types.WebAppInfo(url=MINI_APP_URL)
+    ))
     
     # Добавляем кнопку для копирования реферальной ссылки
     if user_ref_code:
-        keyboard.append([InlineKeyboardButton("🔗 Скопировать реферальную ссылку", callback_data=f"copy_ref:{user_ref_code}")])
+        builder.add(types.InlineKeyboardButton(
+            text="🔗 Скопировать реферальную ссылку", 
+            callback_data=f"copy_ref:{user_ref_code}"
+        ))
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    builder.adjust(1)  # По одной кнопке в каждом ряду
     
     # Отправляем сообщение
-    await update.message.reply_text(
+    await message.reply(
         welcome_text,
-        reply_markup=reply_markup
+        reply_markup=builder.as_markup()
     )
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Обработчик callback запросов от inline кнопок
+@dp.callback_query()
+async def handle_callback(callback: types.CallbackQuery):
     """Обработчик callback запросов от inline кнопок"""
-    query = update.callback_query
-    await query.answer()
+    await callback.answer()
     
-    if query.data.startswith("copy_ref:"):
-        ref_code = query.data.split(":")[1]
-        bot_username = context.bot.username
+    if callback.data.startswith("copy_ref:"):
+        ref_code = callback.data.split(":")[1]
+        bot_username = (await bot.get_me()).username
         ref_link = f"https://t.me/{bot_username}?start={ref_code}"
         
         # Отправляем сообщение с возможностью копирования
-        await query.message.reply_text(
+        await callback.message.reply(
             f"🔗 Ваша реферальная ссылка:\n\n{ref_link}\n\n"
             f"Отправьте эту ссылку друзьям и получите {REFERRAL_BONUS_REQUESTS} бонусных запросов "
             "за каждого нового пользователя!"
         )
 
-def main():
-    """Основная функция"""
-    # Создаем приложение бота
-    application = Application.builder().token(TOKEN).build()
-
-    # Добавляем обработчики
-    application.add_handler(CommandHandler('start', start))
-    
-    # Добавляем обработчик для callback_query (для кнопок)
-    from telegram.ext import CallbackQueryHandler
-    application.add_handler(CallbackQueryHandler(handle_callback))
-
-    # Запускаем бота
-    print("Бот запущен...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+# Основная функция
+async def main():
+    print("Запуск бота...")
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
+    # Проверяем наличие всех необходимых переменных окружения
+    required_vars = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'BOT_TOKEN']
+    missing = [var for var in required_vars if not os.getenv(var)]
+    if missing:
+        print(f"Отсутствуют необходимые переменные окружения: {', '.join(missing)}")
+        exit(1)
+        
     asyncio.run(main())

@@ -259,6 +259,7 @@ class Database:
         Подключение к базе данных с использованием переменных окружения
         """
         try:
+            # Используем DB_CONFIG для подключения, если переменные окружения пустые
             self.connection = pymysql.connect(
                 host=os.getenv('DB_HOST', 'localhost'),
                 port=int(os.getenv('DB_PORT', 3306)),
@@ -269,8 +270,13 @@ class Database:
                 cursorclass=pymysql.cursors.DictCursor
             )
             print("Подключение к БД MySQL успешно")
+            print(f"Параметры подключения: хост={os.getenv('DB_HOST')}, пользователь={os.getenv('DB_USER')}, база={os.getenv('DB_NAME')}")
+            return True
         except pymysql.MySQLError as e:
             print(f"Ошибка подключения к MySQL: {e}")
+            # Подробная отладочная информация
+            print(f"Параметры подключения: хост={os.getenv('DB_HOST')}, пользователь={os.getenv('DB_USER')}, база={os.getenv('DB_NAME')}")
+            return False
     
     def init_db(self):
         """Инициализация базы данных и создание необходимых таблиц"""
@@ -344,8 +350,6 @@ class Database:
         except Exception as e:
             print(f"Ошибка инициализации базы данных: {e}")
             return False
-        finally:
-            self.connection.close()
     
     def save_user(self, telegram_id, username=None, first_name=None, last_name=None, 
                  is_bot=False, language_code=None, chat_id=None, contact=None, is_active=True):
