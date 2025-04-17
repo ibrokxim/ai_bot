@@ -832,7 +832,7 @@ class ChatMessageCreateView(APIView):
             return Response({'success': False, 'message': 'Поле content обязательно'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Получаем модель ИИ из запроса или используем значение по умолчанию
-        ai_model_to_use = request.data.get('ai_model', 'gpt-4')
+        ai_model_to_use = request.data.get('ai_model', 'gpt-4o-mini')
 
         # Создаем новый чат, если chat_id равен 0, null или не существует
         if not chat_id or chat_id == 0:
@@ -884,10 +884,11 @@ class ChatMessageCreateView(APIView):
             # Используем выбранную модель
             if chat.ai_model.startswith('gpt'):
                 # Для моделей OpenAI
+                print(f"Используем модель: {chat.ai_model}")
                 response = openai.chat.completions.create(
                     model=chat.ai_model,
                     messages=messages_for_ai,
-                    # max_tokens=... # Можно добавить ограничения
+                    # max_tokens=4000 # Можно добавить ограничения для некоторых моделей
                 )
                 # Убедитесь, что структура ответа соответствует новой версии API OpenAI
                 if response.choices and len(response.choices) > 0:

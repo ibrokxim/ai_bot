@@ -261,7 +261,7 @@ class Chat(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
     title = models.CharField(max_length=255, default='Новый чат')
-    ai_model = models.CharField(max_length=50, choices=AI_MODEL_CHOICES, default='gpt-4')
+    ai_model = models.CharField(max_length=50, choices=AI_MODEL_CHOICES, default='gpt-4o-mini')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
