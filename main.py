@@ -61,6 +61,7 @@ async def start_cmd(message: Message, state: FSMContext):
     last_name = message.from_user.last_name
     language_code = message.from_user.language_code
     is_bot = message.from_user.is_bot
+    chat_id = message.chat.id
     
     # Проверяем, если пришел реферальный код
     referral_code = None
@@ -89,7 +90,7 @@ async def start_cmd(message: Message, state: FSMContext):
         await show_welcome_message(message, user_id)
     else:
         # Создаем или обновляем пользователя в БД
-        db.save_user(user_id, username, first_name, last_name, language_code, is_bot)
+        db.save_user(user_id, username, first_name, last_name, language_code, is_bot, chat_id=chat_id)
         
         # Запрашиваем контакт у пользователя
         contact_button = KeyboardButton(text="📱 Отправить контакт", request_contact=True)
@@ -134,6 +135,7 @@ async def process_contact(message: Message, state: FSMContext):
     """Обработчик получения контакта от пользователя"""
     user_id = message.from_user.id
     contact = message.contact
+    chat_id = message.chat.id
     
     try:
         # Валидация номера телефона
@@ -158,7 +160,8 @@ async def process_contact(message: Message, state: FSMContext):
             message.from_user.last_name, 
             message.from_user.language_code, 
             message.from_user.is_bot, 
-            contact
+            contact,
+            chat_id=chat_id
         )
         
         # Обработка реферального кода, если он есть
