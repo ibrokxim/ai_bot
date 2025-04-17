@@ -1,16 +1,12 @@
-import os
+import logging
+from typing import Optional, Dict, Any
+
+import mysql.connector
 import pymysql
 import pymysql.cursors
-import datetime
-import uuid
 from dotenv import load_dotenv
+
 from config import DB_CONFIG
-import random
-import string
-import mysql.connector
-from mysql.connector import Error
-import logging
-from typing import Optional, Dict, Any, Union, List
 
 # Загрузка переменных окружения
 load_dotenv()
