@@ -352,7 +352,7 @@ class Database:
     def save_user(self, telegram_id: int, username: Optional[str] = None, 
                  first_name: Optional[str] = None, last_name: Optional[str] = None, 
                  language_code: Optional[str] = None, is_bot: bool = False,
-                 contact: Optional[Any] = None) -> None:
+                 contact: Optional[Any] = None, chat_id: Optional[int] = None) -> None:
         """
         Сохранение информации о пользователе в базе данных
         
@@ -363,69 +363,43 @@ class Database:
         :param language_code: Код языка
         :param is_bot: Является ли пользователь ботом
         :param contact: Объект контакта пользователя
+        :param chat_id: ID чата
         """
         try:
-            if not self.conn or not self.conn.is_connected():
-                self.connect()
-            
-            cursor = self.conn.cursor()
-            
-            # Получаем номер телефона из контакта, если он есть
-            phone_number = None
-            if contact:
-                phone_number = contact.phone_number
-            
-            # Проверяем, существует ли пользователь
-            cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
-            user_exists = cursor.fetchone()
-            
-            if user_exists:
-                # Обновляем существующего пользователя
-                query = """
-                    UPDATE users 
-                    SET username = %s, first_name = %s, last_name = %s, 
-                        language_code = %s, is_bot = %s
-                """
-                params = [username, first_name, last_name, language_code, is_bot]
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
                 
-                # Добавляем телефон в запрос только если он предоставлен
-                if phone_number:
-                    query += ", phone_number = %s"
-                    params.append(phone_number)
+                # Проверяем существование пользователя
+                cursor.execute("""
+                    SELECT id FROM users WHERE telegram_id = %s
+                """, (telegram_id,))
                 
-                query += " WHERE telegram_id = %s"
-                params.append(telegram_id)
+                user = cursor.fetchone()
                 
-                cursor.execute(query, params)
-            else:
-                # Создаем нового пользователя
-                query = """
-                    INSERT INTO users 
-                    (telegram_id, username, first_name, last_name, language_code, is_bot
-                """
+                if user:
+                    # Обновляем существующего пользователя
+                    cursor.execute("""
+                        UPDATE users 
+                        SET username = %s, first_name = %s, last_name = %s,
+                            language_code = %s, is_bot = %s, contact = %s,
+                            chat_id = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE telegram_id = %s
+                    """, (username, first_name, last_name, language_code, is_bot, 
+                          contact, chat_id, telegram_id))
+                else:
+                    # Создаем нового пользователя
+                    cursor.execute("""
+                        INSERT INTO users 
+                        (telegram_id, username, first_name, last_name, 
+                         language_code, is_bot, contact, chat_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (telegram_id, username, first_name, last_name, 
+                          language_code, is_bot, contact, chat_id))
                 
-                params = [telegram_id, username, first_name, last_name, language_code, is_bot]
+                conn.commit()
                 
-                # Добавляем телефон в запрос если он предоставлен
-                if phone_number:
-                    query += ", phone_number"
-                
-                query += ") VALUES (%s, %s, %s, %s, %s, %s"
-                
-                if phone_number:
-                    query += ", %s"
-                    params.append(phone_number)
-                
-                query += ")"
-                
-                cursor.execute(query, params)
-            
-            self.conn.commit()
-            cursor.close()
-            logging.info(f"Пользователь {telegram_id} успешно сохранен")
-        except mysql.connector.Error as e:
-            self.conn.rollback()
-            logging.error(f"Ошибка при сохранении пользователя {telegram_id}: {e}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении пользователя: {e}")
             raise
 
     def get_user(self, telegram_id: int) -> Optional[Dict[str, Any]]:
