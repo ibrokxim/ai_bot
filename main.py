@@ -72,9 +72,9 @@ async def start_cmd(message: Message, state: FSMContext):
     user_data = db.get_user(user_id)
     
     # Проверяем, есть ли у пользователя сохраненный контакт
-    if user_data and user_data.get('phone_number'):
+    if user_data and user_data.get('contact'):
         # Пользователь уже отправил контакт, переводим в состояние registered
-        await UserState.registered.set()
+        await state.set_state(UserState.registered)
         
         # Обработка реферального кода, если он есть
         if referral_code:
@@ -92,9 +92,12 @@ async def start_cmd(message: Message, state: FSMContext):
         db.save_user(user_id, username, first_name, last_name, language_code, is_bot)
         
         # Запрашиваем контакт у пользователя
-        markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        contact_button = KeyboardButton("📱 Отправить контакт", request_contact=True)
-        markup.add(contact_button)
+        contact_button = KeyboardButton(text="📱 Отправить контакт", request_contact=True)
+        markup = ReplyKeyboardMarkup(
+            keyboard=[[contact_button]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
         
         await message.reply(
             "Для продолжения, пожалуйста, поделитесь вашим контактом. "
@@ -103,7 +106,7 @@ async def start_cmd(message: Message, state: FSMContext):
         )
         
         # Сохраняем реферальный код в состоянии, если он есть
-        await UserState.waiting_for_contact.set()
+        await state.set_state(UserState.waiting_for_contact)
         await state.update_data(referral_code=referral_code)
 
 # Добавляем новую команду для обновления контакта
@@ -182,7 +185,7 @@ async def process_contact(message: Message, state: FSMContext):
         )
         
         # Переводим пользователя в статус зарегистрированного
-        await UserState.registered.set()
+        await state.set_state(UserState.registered)
         
         # Показываем приветственное сообщение
         await show_welcome_message(message, user_id)
@@ -227,10 +230,11 @@ async def show_welcome_message(message: Message, user_id):
     referral_link = f"https://t.me/{bot_username}?start={referral_code}"
     
     # Создаем клавиатуру
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("💬 Начать чат", callback_data="start_chat"))
-    markup.add(InlineKeyboardButton("👥 Пригласить друга", callback_data="invite_friend"))
-    markup.add(InlineKeyboardButton("📊 Мой профиль", callback_data="profile"))
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Начать чат", callback_data="start_chat")],
+        [InlineKeyboardButton(text="👥 Пригласить друга", callback_data="invite_friend")],
+        [InlineKeyboardButton(text="📊 Мой профиль", callback_data="profile")]
+    ])
     
     # Отправляем приветственное сообщение
     await message.reply(
@@ -293,7 +297,7 @@ async def process_profile(callback_query: types.CallbackQuery):
         user_id,
         f"📊 Ваш профиль:\n\n"
         f"👤 ID: {user_id}\n"
-        f"📱 Телефон: {user_data.get('phone_number', 'Не указан')}\n"
+        f"📱 Телефон: {user_data.get('contact', 'Не указан')}\n"
         f"🔢 Осталось запросов: {user_data.get('requests_left', 0)}\n"
         f"📅 Дата регистрации: {user_data.get('created_at', 'Неизвестно')}"
     )
