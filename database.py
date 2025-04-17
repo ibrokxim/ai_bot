@@ -364,6 +364,12 @@ class Database:
                 cursor.execute("SELECT user_id FROM users WHERE telegram_id = %s", (telegram_id,))
                 existing_user = cursor.fetchone()
                 
+                # Получаем телефон из контакта, если он есть
+                phone_number = None
+                if contact is not None:
+                    if hasattr(contact, 'phone_number'):
+                        phone_number = contact.phone_number
+                
                 if existing_user:
                     # Обновляем информацию о существующем пользователе
                     sql = '''
@@ -382,9 +388,9 @@ class Database:
                         params += (chat_id,)
                     
                     # Добавляем phone_number, если он предоставлен
-                    if contact is not None and hasattr(contact, 'phone_number'):
+                    if phone_number is not None:
                         sql += ", phone_number = %s"
-                        params += (contact.phone_number,)
+                        params += (phone_number,)
                     
                     sql += " WHERE telegram_id = %s"
                     params += (telegram_id,)
@@ -400,10 +406,6 @@ class Database:
                         chat_id, phone_number, is_active, registration_date) 
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     '''
-                    
-                    phone_number = None
-                    if contact is not None and hasattr(contact, 'phone_number'):
-                        phone_number = contact.phone_number
                     
                     cursor.execute(sql, (
                         telegram_id, username, first_name, last_name, is_bot, language_code,

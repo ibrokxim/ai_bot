@@ -1,5 +1,10 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from django.http import HttpResponseRedirect
+from django.urls import reverse, path
+from django.contrib import messages
+from django.db.models import Count, Sum, Q
+from django.utils.safestring import mark_safe
 
 from .models import (
     BotUser, Referral, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
@@ -104,37 +109,93 @@ class RussianColumnNameAdmin(admin.ModelAdmin):
 
 @admin.register(BotUser)
 class BotUserAdmin(RussianColumnNameAdmin):
-    list_display = ('user_id', 'telegram_id', 'username', 'first_name', 'last_name', 
-                   'is_bot', 'is_active', 'requests_left', 'registration_date')
-    list_filter = ('is_bot', 'is_active', 'language_code')
-    search_fields = ('username', 'first_name', 'last_name', 'telegram_id')
-    readonly_fields = ('user_id', 'telegram_id', 'registration_date')  # Эти поля нельзя изменять
+    list_display = ('user_id', 'telegram_id', 'username', 'first_name', 'last_name', 'user_contact', 'language_code', 'requests_left', 'is_active', 'registration_date')
+    search_fields = ('username', 'telegram_id', 'first_name', 'last_name', 'contact')
+    list_filter = ('is_active', 'is_bot', 'registration_date', 'language_code')
+    readonly_fields = ('registration_date',)
     ordering = ('-registration_date',)
-
-    def has_add_permission(self, request):
-        return False  # Запрещаем создание новых пользователей через админку
-
+    actions = ['delete_user_with_data']
+    
     def has_delete_permission(self, request, obj=None):
-        return False  # Запрещаем удаление пользователей через админку
+        """Разрешить удаление пользователей"""
+        return True
     
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
-            'user_id': 'ID пользователя',
+            'user_id': 'ID',
             'telegram_id': 'Telegram ID',
             'username': 'Имя пользователя',
             'first_name': 'Имя',
             'last_name': 'Фамилия',
-            'is_bot': 'Бот',
-            'is_active': 'Активен',
+            'user_contact': 'Контакт',
+            'language_code': 'Язык',
             'requests_left': 'Осталось запросов',
+            'is_active': 'Активен',
             'registration_date': 'Дата регистрации'
         }
+    
+    @admin.display(description='Контакт')
+    def user_contact(self, obj):
+        """Метод для отображения контакта пользователя"""
+        if obj.contact:
+            return format_html('<a href="tel:{0}">{0}</a>', obj.contact)
+        return '-'
+    
+    @admin.action(description='Удалить пользователя вместе со всеми данными')
+    def delete_user_with_data(self, request, queryset):
+        """Метод для удаления пользователя вместе со всеми его данными"""
+        from django.db import transaction
+        total_deleted = 0
+        
+        try:
+            with transaction.atomic():
+                for user in queryset:
+                    # Удаляем связанные объекты
+                    UserPlan.objects.filter(user=user).delete()
+                    Payment.objects.filter(user=user).delete()
+                    RequestUsage.objects.filter(user=user).delete()
+                    UserStatistics.objects.filter(user=user).delete()
+                    ReferralHistory.objects.filter(referrer=user).delete()
+                    ReferralHistory.objects.filter(referred_user=user).delete()
+                    
+                    # Проверяем существование модели PromoCodeUsage
+                    try:
+                        from .models import PromoCodeUsage
+                        PromoCodeUsage.objects.filter(user=user).delete()
+                    except (ImportError, AttributeError):
+                        pass  # Модель не существует или не импортируется
+                    
+                    # Удаляем реферальные коды
+                    Referral.objects.filter(user=user).delete()
+                    
+                    # Удаляем чаты и сообщения
+                    chats = Chat.objects.filter(user=user)
+                    for chat in chats:
+                        ChatMessage.objects.filter(chat=chat).delete()
+                    chats.delete()
+                    
+                    # Наконец удаляем самого пользователя
+                    user.delete()
+                    total_deleted += 1
+                
+                self.message_user(
+                    request,
+                    f'Успешно удалено пользователей: {total_deleted}',
+                    messages.SUCCESS
+                )
+        except Exception as e:
+            self.message_user(
+                request,
+                f'Ошибка при удалении пользователей: {str(e)}',
+                messages.ERROR
+            )
 
 @admin.register(Referral)
 class ReferralAdmin(RussianColumnNameAdmin):
     list_display = ('id', 'user', 'referral_code', 'created_at')
-    search_fields = ('referral_code', 'user__username', 'user__first_name', 'user__last_name')
+    search_fields = ('user__username', 'referral_code')
+    list_filter = ('created_at',)
     readonly_fields = ('created_at',)
     ordering = ('-created_at',)
     
@@ -149,29 +210,30 @@ class ReferralAdmin(RussianColumnNameAdmin):
 
 @admin.register(Plan)
 class PlanAdmin(RussianColumnNameAdmin):
-    list_display = ('id', 'name', 'requests', 'price', 'is_active', 'is_subscription', 'duration_days', 'priority')
+    list_display = ('id', 'name', 'requests', 'price', 'is_active', 'is_subscription', 'duration_days', 'discount_percent', 'priority')
     search_fields = ('name',)
     list_filter = ('is_active', 'is_subscription', 'created_at')
-    ordering = ('priority', 'price')
+    ordering = ('priority', 'price',)
     
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
             'id': 'ID',
             'name': 'Название',
-            'requests': 'Запросы',
+            'requests': 'Запросов',
             'price': 'Цена',
             'is_active': 'Активен',
             'is_subscription': 'Подписка',
             'duration_days': 'Длительность (дней)',
+            'discount_percent': 'Скидка (%)',
             'priority': 'Приоритет'
         }
 
 @admin.register(UserPlan)
 class UserPlanAdmin(RussianColumnNameAdmin):
-    list_display = ('id', 'user', 'plan', 'activated_at', 'expired_at', 'is_active', 'price_paid', 'requests_added')
-    search_fields = ('user__username', 'user__first_name', 'user__last_name')
-    list_filter = ('is_active', 'activated_at', 'expired_at', 'is_auto_renewal')
+    list_display = ('id', 'user', 'plan', 'activated_at', 'expired_at', 'is_active', 'price_paid', 'requests_added', 'discount_applied', 'is_auto_renewal')
+    search_fields = ('user__username', 'user__telegram_id', 'plan__name')
+    list_filter = ('is_active', 'is_auto_renewal', 'activated_at', 'expired_at')
     readonly_fields = ('activated_at',)
     ordering = ('-activated_at',)
     
@@ -184,14 +246,16 @@ class UserPlanAdmin(RussianColumnNameAdmin):
             'activated_at': 'Дата активации',
             'expired_at': 'Дата истечения',
             'is_active': 'Активен',
-            'price_paid': 'Оплаченная цена',
-            'requests_added': 'Добавлено запросов'
+            'price_paid': 'Оплачено',
+            'requests_added': 'Добавлено запросов',
+            'discount_applied': 'Скидка (%)',
+            'is_auto_renewal': 'Автопродление'
         }
 
 @admin.register(Payment)
 class PaymentAdmin(RussianColumnNameAdmin):
     list_display = ('id', 'user', 'amount', 'currency', 'payment_date', 'payment_system', 'status')
-    search_fields = ('user__username', 'payment_id', 'user__telegram_id')
+    search_fields = ('user__username', 'user__telegram_id', 'payment_id')
     list_filter = ('status', 'payment_system', 'payment_date')
     readonly_fields = ('payment_date',)
     ordering = ('-payment_date',)

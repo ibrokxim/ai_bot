@@ -1,3 +1,1 @@
-from django.contrib import admin
-# Нет необходимости в API документации в админке
-# Здесь можно будет добавить регистрацию моделей если необходимо 
+from django.contrib import admin 
