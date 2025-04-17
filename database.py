@@ -1,5 +1,6 @@
 import logging
 from typing import Optional, Dict, Any
+import json
 
 import mysql.connector
 import pymysql
@@ -277,6 +278,14 @@ class Database:
         self.connect()
         self._create_tables()
     
+    def get_connection(self):
+        """
+        Создает и возвращает новое соединение с базой данных
+        
+        :return: Соединение с базой данных
+        """
+        return mysql.connector.connect(**self.config)
+
     def connect(self):
         """Установка соединения с базой данных"""
         try:
@@ -299,8 +308,9 @@ class Database:
                 first_name VARCHAR(255),
                 last_name VARCHAR(255),
                 language_code VARCHAR(10),
-                phone_number VARCHAR(20),
                 is_bot BOOLEAN DEFAULT FALSE,
+                contact JSON,
+                chat_id BIGINT,
                 referral_code VARCHAR(20) UNIQUE,
                 requests_left INT DEFAULT 10,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -366,40 +376,52 @@ class Database:
         :param chat_id: ID чата
         """
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
+            if not self.conn or not self.conn.is_connected():
+                self.connect()
+            
+            cursor = self.conn.cursor()
+            
+            # Получаем номер телефона из контакта, если он есть
+            phone_number = None
+            if contact:
+                phone_number = getattr(contact, 'phone_number', None)
+            
+            # Проверяем, существует ли пользователь
+            cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
+            user_exists = cursor.fetchone()
+            
+            if user_exists:
+                # Обновляем существующего пользователя
+                query = """
+                    UPDATE users 
+                    SET username = %s, first_name = %s, last_name = %s,
+                    language_code = %s, is_bot = %s, contact = %s, chat_id = %s,
+                    is_active = 1
+                    WHERE telegram_id = %s
+                """
+                params = [username, first_name, last_name, language_code, is_bot, 
+                         phone_number, chat_id, telegram_id]
                 
-                # Проверяем существование пользователя
-                cursor.execute("""
-                    SELECT id FROM users WHERE telegram_id = %s
-                """, (telegram_id,))
+                cursor.execute(query, params)
+            else:
+                # Создаем нового пользователя
+                query = """
+                    INSERT INTO users 
+                    (telegram_id, username, first_name, last_name, language_code, 
+                     is_bot, contact, chat_id, is_active, requests_left)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, 10)
+                """
+                params = [telegram_id, username, first_name, last_name, language_code, 
+                         is_bot, phone_number, chat_id]
                 
-                user = cursor.fetchone()
-                
-                if user:
-                    # Обновляем существующего пользователя
-                    cursor.execute("""
-                        UPDATE users 
-                        SET username = %s, first_name = %s, last_name = %s,
-                            language_code = %s, is_bot = %s, contact = %s,
-                            chat_id = %s, updated_at = CURRENT_TIMESTAMP
-                        WHERE telegram_id = %s
-                    """, (username, first_name, last_name, language_code, is_bot, 
-                          contact, chat_id, telegram_id))
-                else:
-                    # Создаем нового пользователя
-                    cursor.execute("""
-                        INSERT INTO users 
-                        (telegram_id, username, first_name, last_name, 
-                         language_code, is_bot, contact, chat_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (telegram_id, username, first_name, last_name, 
-                          language_code, is_bot, contact, chat_id))
-                
-                conn.commit()
-                
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении пользователя: {e}")
+                cursor.execute(query, params)
+            
+            self.conn.commit()
+            cursor.close()
+            logging.info(f"Пользователь {telegram_id} успешно сохранен")
+        except mysql.connector.Error as e:
+            self.conn.rollback()
+            logging.error(f"Ошибка при сохранении пользователя {telegram_id}: {e}")
             raise
 
     def get_user(self, telegram_id: int) -> Optional[Dict[str, Any]]:
