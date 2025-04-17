@@ -98,8 +98,11 @@ async def process_contact(message: types.Message, state: FSMContext):
     chat = message.chat
     contact = message.contact
     
+    print(f"Получен контакт от пользователя {user.id}: {contact.phone_number}")
+    
     # Проверяем, что контакт принадлежит пользователю
     if contact.user_id != user.id:
+        print(f"Контакт не принадлежит пользователю: {contact.user_id} != {user.id}")
         await message.reply(
             "Пожалуйста, отправьте свой собственный контакт, используя кнопку ниже.",
             reply_markup=ReplyKeyboardBuilder().add(
@@ -113,12 +116,14 @@ async def process_contact(message: types.Message, state: FSMContext):
     
     # Проверка подключения к базе данных
     if not db.connection or db.connection._closed:
+        print(f"Ошибка подключения к БД при обработке контакта. Параметры: {DB_CONFIG}")
         await message.reply("Извините, произошла ошибка при подключении к базе данных")
         return
     
     # Получаем данные о пользователе
     user_data = db.get_user(user.id)
     is_new_user = user_data is None
+    print(f"Пользователь {'новый' if is_new_user else 'существующий'}, id={user.id}")
     
     # Получаем реферальный код из состояния
     data = await state.get_data()
@@ -126,13 +131,17 @@ async def process_contact(message: types.Message, state: FSMContext):
     
     # Обрабатываем реферальный код если он есть
     if referral_code:
+        print(f"Обрабатываем реферальный код: {referral_code}")
         referral_info = db.get_referral(referral_code)
         
         if referral_info and referral_info['user_id'] != user.id:
+            print(f"Найдена реферальная информация: {referral_info}")
             if is_new_user or not db.check_referral_used(user.id, referral_info['user_id']):
+                print(f"Добавляем {REFERRAL_BONUS_REQUESTS} бонусных запросов пользователю {referral_info['user_id']}")
                 db.add_requests(referral_info['user_id'], REFERRAL_BONUS_REQUESTS)
                 
                 if not is_new_user:
+                    print(f"Сохраняем историю реферала")
                     db.save_referral_history(
                         referrer_id=referral_info['user_id'],
                         referred_user_id=user.id,
@@ -141,7 +150,8 @@ async def process_contact(message: types.Message, state: FSMContext):
                     )
     
     # Сохраняем пользователя с контактом
-    db.save_user(
+    print(f"Сохраняем пользователя с контактом: {user.id}, {contact.phone_number}")
+    save_result = db.save_user(
         telegram_id=user.id,
         username=user.username,
         first_name=user.first_name,
@@ -152,9 +162,11 @@ async def process_contact(message: types.Message, state: FSMContext):
         contact=contact,
         is_active=True
     )
+    print(f"Результат сохранения пользователя: {'новый' if save_result else 'обновлен существующий'}")
     
     # Обновляем данные пользователя
     user_data = db.get_user(user.id)
+    print(f"Получены данные пользователя после сохранения: {user_data}")
     
     # Убираем клавиатуру с кнопкой отправки контакта
     remove_keyboard = types.ReplyKeyboardRemove()

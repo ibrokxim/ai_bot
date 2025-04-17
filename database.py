@@ -256,26 +256,26 @@ class Database:
     
     def connect(self):
         """
-        Подключение к базе данных с использованием переменных окружения
+        Подключение к базе данных с использованием глобального конфига
         """
         try:
-            # Используем DB_CONFIG для подключения, если переменные окружения пустые
+            # Используем DB_CONFIG для подключения
             self.connection = pymysql.connect(
-                host=os.getenv('DB_HOST', 'localhost'),
-                port=int(os.getenv('DB_PORT', 3306)),
-                user=os.getenv('DB_USER', 'root'),
-                password=os.getenv('DB_PASSWORD', ''),
-                db=os.getenv('DB_NAME', 'ai_bot'),
-                charset=os.getenv('DB_CHARSET', 'utf8mb4'),
+                host=DB_CONFIG['host'],
+                port=DB_CONFIG['port'],
+                user=DB_CONFIG['user'],
+                password=DB_CONFIG['password'],
+                db=DB_CONFIG['db'],
+                charset=DB_CONFIG['charset'],
                 cursorclass=pymysql.cursors.DictCursor
             )
-            print("Подключение к БД MySQL успешно")
-            print(f"Параметры подключения: хост={os.getenv('DB_HOST')}, пользователь={os.getenv('DB_USER')}, база={os.getenv('DB_NAME')}")
+            print(f"Подключение к БД MySQL успешно")
+            print(f"Параметры подключения: хост={DB_CONFIG['host']}, пользователь={DB_CONFIG['user']}, база={DB_CONFIG['db']}")
             return True
         except pymysql.MySQLError as e:
             print(f"Ошибка подключения к MySQL: {e}")
             # Подробная отладочная информация
-            print(f"Параметры подключения: хост={os.getenv('DB_HOST')}, пользователь={os.getenv('DB_USER')}, база={os.getenv('DB_NAME')}")
+            print(f"Параметры подключения: хост={DB_CONFIG['host']}, пользователь={DB_CONFIG['user']}, база={DB_CONFIG['db']}")
             return False
     
     def init_db(self):
@@ -356,6 +356,7 @@ class Database:
         """Сохранение информации о пользователе. Возвращает True, если пользователь новый."""
         if not self.connection or self.connection._closed:
             if not self.connect():
+                print("Ошибка соединения с БД при сохранении пользователя")
                 return False
         
         try:
@@ -369,8 +370,10 @@ class Database:
                 if contact is not None:
                     if hasattr(contact, 'phone_number'):
                         phone_number = contact.phone_number
+                        print(f"Получен номер телефона: {phone_number}")
                 
                 if existing_user:
+                    print(f"Обновляем существующего пользователя: {telegram_id}")
                     # Обновляем информацию о существующем пользователе
                     sql = '''
                         UPDATE users SET 
@@ -397,8 +400,10 @@ class Database:
                     
                     cursor.execute(sql, params)
                     self.connection.commit()
+                    print(f"Пользователь {telegram_id} успешно обновлен")
                     return False  # Пользователь не новый
                 else:
+                    print(f"Создаем нового пользователя: {telegram_id}")
                     # Создаем нового пользователя
                     sql = '''
                         INSERT INTO users 
@@ -407,11 +412,16 @@ class Database:
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     '''
                     
-                    cursor.execute(sql, (
+                    params = (
                         telegram_id, username, first_name, last_name, is_bot, language_code,
                         chat_id, phone_number, is_active, datetime.datetime.now()
-                    ))
+                    )
+                    print(f"SQL-запрос: {sql}")
+                    print(f"Параметры: {params}")
+                    
+                    cursor.execute(sql, params)
                     self.connection.commit()
+                    print(f"Новый пользователь {telegram_id} успешно создан")
                     return True  # Пользователь новый
                     
         except Exception as e:
