@@ -1,21 +1,17 @@
 import logging
 import os
-import uuid
-import hashlib
 import random
 import string
-from datetime import datetime
-from aiogram import Bot, Dispatcher, executor, types, F
-from aiogram.filters import Command
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder, InlineKeyboardButton, InlineKeyboardMarkup
-from database import Database
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Message, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
-from aiogram.filters import CommandStart
-from aiogram.types import Message, Contact
+
+from database import Database
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -43,7 +39,7 @@ print(f"Параметры подключения к БД: {DB_CONFIG['host']}, 
 # Инициализация бота и базы данных
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(storage=storage)
 db = Database(DB_CONFIG)
 
 # Константы
@@ -247,16 +243,16 @@ async def show_welcome_message(message: Message, user_id):
     )
 
 # Обработчики callback-запросов от inline-кнопок
-@dp.callback_query_handler(lambda c: c.data == 'start_chat', state=UserState.registered)
+@dp.callback_query(F.data == 'start_chat', UserState.registered)
 async def process_start_chat(callback_query: types.CallbackQuery):
     """Обработчик начала чата"""
-    await bot.answer_callback_query(callback_query.id)
+    await callback_query.answer()
     await bot.send_message(
         callback_query.from_user.id,
         "Введите ваш запрос и я постараюсь на него ответить."
     )
 
-@dp.callback_query_handler(lambda c: c.data == 'invite_friend', state=UserState.registered)
+@dp.callback_query(F.data == 'invite_friend', UserState.registered)
 async def process_invite_friend(callback_query: types.CallbackQuery):
     """Обработчик приглашения друга"""
     user_id = callback_query.from_user.id
@@ -273,7 +269,7 @@ async def process_invite_friend(callback_query: types.CallbackQuery):
     bot_username = (await bot.get_me()).username
     referral_link = f"https://t.me/{bot_username}?start={referral_code}"
     
-    await bot.answer_callback_query(callback_query.id)
+    await callback_query.answer()
     await bot.send_message(
         user_id,
         f"Поделитесь этой ссылкой с друзьями и получите бонусные запросы:\n\n"
@@ -282,17 +278,17 @@ async def process_invite_friend(callback_query: types.CallbackQuery):
         parse_mode="Markdown"
     )
 
-@dp.callback_query_handler(lambda c: c.data == 'profile', state=UserState.registered)
+@dp.callback_query(F.data == 'profile', UserState.registered)
 async def process_profile(callback_query: types.CallbackQuery):
     """Обработчик просмотра профиля"""
     user_id = callback_query.from_user.id
     user_data = db.get_user(user_id)
     
     if not user_data:
-        await bot.answer_callback_query(callback_query.id, "Ошибка получения данных профиля")
+        await callback_query.answer("Ошибка получения данных профиля")
         return
     
-    await bot.answer_callback_query(callback_query.id)
+    await callback_query.answer()
     await bot.send_message(
         user_id,
         f"📊 Ваш профиль:\n\n"
@@ -318,4 +314,6 @@ if __name__ == '__main__':
         exit(1)
     
     print("Бот запущен!")
-    executor.start_polling(dp, skip_updates=True)
+    # Запускаем бота
+    import asyncio
+    asyncio.run(main())
