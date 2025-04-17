@@ -43,4 +43,6 @@ urlpatterns = [
     path('chats/<int:chat_id>/', views.ChatDetailView.as_view(), name='chat-detail'),
     path('chats/<int:chat_id>/messages/', views.ChatMessageListView.as_view(), name='chat-message-list'),
     path('chats/<int:chat_id>/messages/create/', views.ChatMessageCreateView.as_view(), name='chat-message-create'),
+    # URL для создания нового чата и отправки первого сообщения одновременно
+    path('messages/create', views.ChatMessageCreateView.as_view(), name='chat-message-create-new'),
 ] 

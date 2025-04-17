@@ -30,6 +30,9 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-your-secret-ke
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
+# Отключаем автоматическое добавление слешей в конце URL
+APPEND_SLASH = False
+
 ALLOWED_HOSTS = ['*']
 CSRF_TRUSTED_ORIGINS = [
     "https://api.test-medical.uz",
@@ -67,25 +70,10 @@ MIDDLEWARE = [
 # Настройки CORS
 CORS_ALLOW_ALL_ORIGINS = True  # В продакшене заменить на конкретные домены
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-    'x-telegram-id',  # Разрешаем заголовок telegram_id
-]
+CORS_ALLOW_HEADERS = ['*']
 
 # Добавляем конкретные разрешенные источники (origins)
-CORS_ALLOWED_ORIGINS = [
-    "https://zms9lt5n-3000.euw.devtunnels.ms",
-    "https://front.test-medical.uz",
-    "http://localhost:3000",
-]
+
 
 # Настройки REST Framework
 REST_FRAMEWORK = {

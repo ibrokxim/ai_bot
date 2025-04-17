@@ -246,12 +246,25 @@ class PromoCodeUsage(models.Model):
 # Модели для чатов
 
 class Chat(models.Model):
+    # Типы моделей ИИ
+    AI_MODEL_CHOICES = [
+        ('gpt-4o-mini', 'GPT-4o Mini'),
+        ('claude-3-5', 'Claude 3.5'),
+        ('claude-3-7', 'Claude 3.7'),
+        ('gemini-2-flash', 'Gemini 2.0 Flash'),
+        ('gpt-4', 'GPT-4'),
+        ('gpt3-mini', 'GPT-3 Mini'),
+        ('dall-e', 'DALL-E'),
+        ('midjourney', 'Midjourney'),
+    ]
+    
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
     title = models.CharField(max_length=255, default='Новый чат')
+    ai_model = models.CharField(max_length=50, choices=AI_MODEL_CHOICES, default='gpt-4')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
     class Meta:
         managed = True # Или True, если хотите, чтобы Django создал таблицу
         db_table = 'chats'
@@ -260,7 +273,7 @@ class Chat(models.Model):
         ordering = ['-updated_at']
 
     def __str__(self):
-        return f"{self.title} ({self.user.username})"
+        return f"{self.title} ({self.user.username}) - {self.get_ai_model_display()}"
 
 class ChatMessage(models.Model):
     id = models.AutoField(primary_key=True)

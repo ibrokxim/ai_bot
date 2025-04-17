@@ -821,13 +821,39 @@ class ChatMessageCreateView(APIView):
                 return None
         return request.user
 
-    def post(self, request, chat_id):
+    def post(self, request, chat_id=None):
         user = self.get_user(request)
         if not user:
             return Response({'success': False, 'message': 'Пользователь не найден'}, status=status.HTTP_404_NOT_FOUND)
 
-        # 1. Найти чат
-        chat = get_object_or_404(Chat, id=chat_id, user=user)
+        # Валидация входных данных
+        user_message_content = request.data.get('content')
+        if not user_message_content:
+            return Response({'success': False, 'message': 'Поле content обязательно'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Получаем модель ИИ из запроса или используем значение по умолчанию
+        ai_model_to_use = request.data.get('ai_model', 'gpt-4')
+
+        # Создаем новый чат, если chat_id равен 0, null или не существует
+        if not chat_id or chat_id == 0:
+            # Создаем новый чат
+            # Название чата = первые 30 символов сообщения пользователя
+            title = user_message_content[:30] + ('...' if len(user_message_content) > 30 else '')
+            chat = Chat.objects.create(
+                user=user,
+                title=title,
+                ai_model=ai_model_to_use
+            )
+        else:
+            # Находим существующий чат
+            try:
+                chat = Chat.objects.get(id=chat_id, user=user)
+                # Обновляем модель, если она была изменена
+                if chat.ai_model != ai_model_to_use:
+                    chat.ai_model = ai_model_to_use
+                    chat.save()
+            except Chat.DoesNotExist:
+                return Response({'success': False, 'message': 'Чат не найден'}, status=status.HTTP_404_NOT_FOUND)
 
         # 2. Проверить наличие запросов
         if user.requests_left <= 0:
@@ -836,11 +862,6 @@ class ChatMessageCreateView(APIView):
                 'message': 'У вас закончились запросы. Пожалуйста, пополните баланс.',
                 'requests_left': 0
             }, status=status.HTTP_403_FORBIDDEN)
-
-        # Валидация входных данных (только 'content')
-        user_message_content = request.data.get('content')
-        if not user_message_content:
-            return Response({'success': False, 'message': 'Поле content обязательно'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 4. Сохранить сообщение пользователя
         user_message = ChatMessage.objects.create(
@@ -854,38 +875,57 @@ class ChatMessageCreateView(APIView):
             {"role": msg.role, "content": msg.content}
             for msg in ChatMessage.objects.filter(chat=chat).order_by('timestamp')
         ]
-        # Убираем последнее сообщение ассистента, если оно есть, чтобы не дублировать контекст?
-        # if messages_for_ai and messages_for_ai[-1]["role"] == "assistant":
-        #    messages_for_ai.pop()
 
-        ai_model_to_use = "gpt-4" # Пока только GPT-4
         ai_response_content = "Произошла ошибка при обращении к ИИ." # Значение по умолчанию
         tokens_used = 0 # Значение по умолчанию
 
-        # --- БЛОК ВЗАИМОДЕЙСТВИЯ С OPENAI ---
+        # --- БЛОК ВЗАИМОДЕЙСТВИЯ С ИИ ---
         try:
-            response = openai.chat.completions.create(
-                model=ai_model_to_use,
-                messages=messages_for_ai,
-                # max_tokens=... # Можно добавить ограничения
-            )
-            # Убедитесь, что структура ответа соответствует новой версии API OpenAI
-            if response.choices and len(response.choices) > 0:
-                ai_response_content = response.choices[0].message.content
-            if response.usage:
-                tokens_used = response.usage.total_tokens
+            # Используем выбранную модель
+            if chat.ai_model.startswith('gpt'):
+                # Для моделей OpenAI
+                response = openai.chat.completions.create(
+                    model=chat.ai_model,
+                    messages=messages_for_ai,
+                    # max_tokens=... # Можно добавить ограничения
+                )
+                # Убедитесь, что структура ответа соответствует новой версии API OpenAI
+                if response.choices and len(response.choices) > 0:
+                    ai_response_content = response.choices[0].message.content
+                if response.usage:
+                    tokens_used = response.usage.total_tokens
+            elif chat.ai_model.startswith('claude'):
+                # Для моделей Claude
+                # Здесь будет код для API Claude
+                ai_response_content = "Ответ от Claude (интеграция в разработке)"
+            elif chat.ai_model.startswith('gemini'):
+                # Для моделей Gemini
+                # Здесь будет код для API Gemini
+                ai_response_content = "Ответ от Gemini (интеграция в разработке)"
+            elif chat.ai_model in ['dall-e', 'midjourney']:
+                # Для генерации изображений
+                # Здесь будет код для генерации изображений
+                ai_response_content = "Ссылка на сгенерированное изображение (интеграция в разработке)"
+            else:
+                # Если модель не поддерживается
+                ai_response_content = "Выбранная модель не поддерживается в данный момент"
         except Exception as e:
-            # Обработка ошибок OpenAI
-            # Можно не списывать запрос или записать сообщение об ошибке
+            # Обработка ошибок ИИ
             error_message = f"Ошибка при обращении к ИИ: {str(e)}"
-            ChatMessage.objects.create(
+            assistant_message = ChatMessage.objects.create(
                 chat=chat,
                 role='assistant',
-                content=error_message
+                content=error_message,
+                model_used=chat.ai_model,
+                tokens_used=0
             )
             # Возвращаем ошибку пользователю, не 500, а например 400 или 503
-            return Response({'success': False, 'message': error_message}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        # --- КОНЕЦ БЛОКА OPENAI ---
+            return Response({
+                'success': False, 
+                'message': error_message,
+                'chat': ChatSerializer(chat).data
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        # --- КОНЕЦ БЛОКА ИИ ---
 
         # 3. Списать 1 запрос
         user.requests_left -= 1
@@ -896,13 +936,14 @@ class ChatMessageCreateView(APIView):
             chat=chat,
             role='assistant',
             content=ai_response_content,
-            model_used=ai_model_to_use,
+            model_used=chat.ai_model,
             tokens_used=tokens_used
         )
 
-        # 8. Обновить updated_at у чата (делается автоматически через auto_now=True)
-        # chat.save() # Не обязательно, если auto_now=True
-
-        # 9. Вернуть ответ ИИ пользователю
-        serializer = ChatMessageSerializer(assistant_message)
-        return Response({'success': True, 'message': serializer.data})
+        # 9. Вернуть ответ ИИ пользователю с данными чата
+        return Response({
+            'success': True, 
+            'message': ChatMessageSerializer(assistant_message).data,
+            'chat': ChatSerializer(chat).data,
+            'requests_left': user.requests_left
+        })

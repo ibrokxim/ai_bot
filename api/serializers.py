@@ -113,9 +113,11 @@ class UseRequestSerializer(serializers.Serializer):
 
 class ChatSerializer(serializers.ModelSerializer):
     """Сериализатор для чата"""
+    ai_model_display = serializers.CharField(source='get_ai_model_display', read_only=True)
+    
     class Meta:
         model = Chat
-        fields = ['id', 'user', 'title', 'created_at', 'updated_at']
+        fields = ['id', 'user', 'title', 'ai_model', 'ai_model_display', 'created_at', 'updated_at']
         read_only_fields = ['user', 'created_at', 'updated_at']
 
 class ChatMessageSerializer(serializers.ModelSerializer):
