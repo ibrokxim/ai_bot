@@ -1,6 +1,5 @@
 import logging
 from typing import Optional, Dict, Any
-import json
 
 import mysql.connector
 import pymysql
@@ -408,8 +407,8 @@ class Database:
                 query = """
                     INSERT INTO users 
                     (telegram_id, username, first_name, last_name, language_code, 
-                     is_bot, contact, chat_id, is_active, requests_left)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, 10)
+                     is_bot, contact, chat_id, is_active, requests_left, registration_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, 10, CURRENT_TIMESTAMP)
                 """
                 params = [telegram_id, username, first_name, last_name, language_code, 
                          is_bot, phone_number, chat_id]
