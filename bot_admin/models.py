@@ -76,19 +76,23 @@ class ReferralCode(models.Model):
 class ReferralHistory(models.Model):
     id = models.AutoField(primary_key=True)
     referrer = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referrals_sent', db_column='referrer_id')
-    referred = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referral_source', db_column='referred_id')
+    referred = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referral_source', db_column='referred_id', null=True, blank=True)
+    referral_code = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
+    bonus_requests_added = models.IntegerField(default=0)
+    conversion_status = models.CharField(max_length=50, default='registered')
+    converted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         managed = True
         db_table = 'referral_history'
         verbose_name = 'История реферралов'
         verbose_name_plural = 'История реферралов'
-        unique_together = ('referrer', 'referred')
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.referrer} → {self.referred} ({self.created_at})"
+        referred_str = f" → {self.referred}" if self.referred else ""
+        return f"{self.referrer}{referred_str} ({self.created_at})"
 
 class Plan(models.Model):
     id = models.AutoField(primary_key=True)
