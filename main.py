@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
+import asyncio
 
 from database import Database
 
@@ -146,135 +147,64 @@ async def update_contact_cmd(message: Message, state: FSMContext):
 
 # Улучшаем обработчик получения контакта
 @dp.message(F.contact, UserState.waiting_for_contact)
-async def process_contact(message: Message, state: FSMContext):
-    """Обработчик получения контакта от пользователя"""
-    user_id = message.from_user.id
-    contact = message.contact
-    chat_id = message.chat.id
-    
+async def process_contact(message):
+    """Обрабатывает полученный контакт пользователя"""
     try:
-        logger.debug(f"Начало обработки контакта для пользователя {user_id}")
+        user_id = message.from_user.id
+        contact = message.contact
+        logger.info(f"Получен контакт от пользователя {user_id}: {contact.phone_number}")
         
-        # Валидация номера телефона
-        if not contact.phone_number:
-            logger.warning(f"Пользователь {user_id} отправил контакт без номера телефона")
-            await message.reply("❌ Номер телефона не указан. Пожалуйста, попробуйте еще раз.")
-            return
+        # Сохраняем данные пользователя
+        username = message.from_user.username or ""
+        user_data = {
+            'username': username,
+            'phone': contact.phone_number
+        }
+        logger.debug(f"Данные пользователя для сохранения: {user_data}")
+        
+        # Получаем реферальный код из сессии, если есть
+        referral_code = user_sessions.get(user_id, {}).get('referral_code', None)
+        logger.debug(f"Найден реферальный код {referral_code} для пользователя {user_id}")
+        
+        # Сохраняем пользователя и получаем результат операции
+        user_saved = db.save_user(user_id, user_data)
+        logger.info(f"Пользователь {user_id} сохранен: {user_saved}")
+        
+        if user_saved:
+            # Обрабатываем реферальный код, если есть
+            if referral_code:
+                logger.info(f"Обрабатываем реферальный код {referral_code} для пользователя {user_id}")
+                process_referral_code(user_id, referral_code)
             
-        # Проверяем формат номера телефона
-        phone_number = contact.phone_number
-        if not phone_number.startswith('+'):
-            logger.debug(f"Добавляем префикс '+' к номеру телефона {phone_number}")
-            phone_number = '+' + phone_number
-        
-        logger.info(f"Получен контакт от пользователя {user_id}: {phone_number}")
+            # Автоматически генерируем реферальный код, если его еще нет
+            user_referral_code = db.get_user_referral_code(user_id)
+            if not user_referral_code:
+                logger.info(f"Генерируем новый реферальный код для пользователя {user_id}")
+                user_referral_code = db.generate_referral_code(user_id)
+                logger.debug(f"Сгенерирован код {user_referral_code}")
             
-        # Получаем данные из состояния
-        state_data = await state.get_data()
-        referral_code = state_data.get('referral_code')
-        logger.info(f"Реферальный код из состояния: {referral_code}")
-        
-        # Сохраняем контакт пользователя в базе данных
-        logger.debug(f"Сохраняем данные пользователя {user_id} в базу данных")
-        user_saved = db.save_user(
-            user_id=user_id, 
-            username=message.from_user.username, 
-            first_name=message.from_user.first_name, 
-            last_name=message.from_user.last_name,
-            chat_id=chat_id,
-            contact=phone_number,
-            is_bot=message.from_user.is_bot,
-            language_code=message.from_user.language_code,
-            is_active=True
-        )
-        
-        if not user_saved:
-            logger.error(f"Не удалось сохранить пользователя {user_id}")
+            # Отправляем сообщение об успешной регистрации
             await message.reply(
-                "❌ Произошла ошибка при сохранении данных. Пожалуйста, попробуйте позже.",
-                reply_markup=ReplyKeyboardRemove()
+                "✅ Контакт успешно сохранен!\n"
+                "Теперь вы можете использовать бота в полном объеме.",
+                reply_markup=types.ReplyKeyboardRemove()
             )
-            return
-        else:
-            logger.info(f"Пользователь {user_id} успешно сохранен в базе данных")
-        
-        # Генерируем реферальный код для нового пользователя
-        new_ref_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        logger.info(f"Сгенерирован новый реферальный код для пользователя {user_id}: {new_ref_code}")
-        
-        logger.debug(f"Сохраняем реферальный код для пользователя {user_id}")
-        ref_code_saved = db.update_user_referral_code(user_id, new_ref_code)
-        if not ref_code_saved:
-            logger.error(f"Не удалось сохранить реферальный код {new_ref_code} для пользователя {user_id}")
-        else:
-            logger.info(f"Реферальный код успешно сохранен для пользователя {user_id}")
-        
-        # Обработка реферального кода, если пользователь пришел по ссылке
-        if referral_code:
-            logger.info(f"Обрабатываем реферальный код: {referral_code}")
             
-            logger.debug(f"Ищем реферера по коду {referral_code}")
-            referrer_id = db.get_user_by_referral_code(referral_code)
-            logger.debug(f"Результат поиска реферера: {referrer_id}")
-            
-            if referrer_id and referrer_id != user_id:
-                logger.info(f"Найден реферер {referrer_id} для кода {referral_code}")
-                
-                # Сохраняем информацию о реферале и добавляем бонусные запросы
-                logger.debug(f"Сохраняем историю реферала между {referrer_id} и {user_id}")
-                ref_history_saved = db.save_referral_history(referrer_id, user_id, referral_code, REFERRAL_BONUS_REQUESTS)
-                logger.debug(f"Результат сохранения истории реферала: {ref_history_saved}")
-                
-                if ref_history_saved:
-                    # Добавляем бонусные запросы только реферреру
-                    logger.debug(f"Добавляем {REFERRAL_BONUS_REQUESTS} бонусных запросов пользователю {referrer_id}")
-                    success = db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
-                    logger.debug(f"Результат добавления бонусных запросов: {success}")
-                    
-                    if success:
-                        logger.info(f"Успешно добавлены бонусные запросы {REFERRAL_BONUS_REQUESTS} пользователю {referrer_id}")
-                        
-                        # Уведомляем реферера
-                        try:
-                            logger.debug(f"Отправляем уведомление реферреру {referrer_id}")
-                            await bot.send_message(
-                                referrer_id,
-                                f"🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!\n"
-                                f"Вам начислено {REFERRAL_BONUS_REQUESTS} дополнительных запросов."
-                            )
-                            logger.info(f"Отправлено уведомление реферреру {referrer_id}")
-                        except Exception as e:
-                            logger.error(f"Ошибка при отправке уведомления реферреру: {str(e)}")
-                    else:
-                        logger.error(f"Не удалось добавить бонусные запросы пользователю {referrer_id}")
-                else:
-                    logger.error(f"Не удалось сохранить историю реферала между {referrer_id} и {user_id}")
-            else:
-                logger.warning(f"Не удалось найти реферера для кода {referral_code} или пользователь пытается использовать свой код")
+            # Отправляем приветственное сообщение с инструкциями
+            await send_welcome_message(user_id)
         else:
-            logger.info("Нет реферального кода при регистрации пользователя")
-
-        # Удаляем клавиатуру и отправляем сообщение об успехе
-        logger.debug(f"Отправляем сообщение об успешном сохранении контакта пользователю {user_id}")
-        await message.reply(
-            "✅ Ваш контакт успешно сохранен!",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        
-        # Переводим пользователя в статус зарегистрированного
-        logger.debug(f"Устанавливаем статус registered для пользователя {user_id}")
-        await state.set_state(UserState.registered)
-        
-        # Показываем приветственное сообщение
-        logger.debug(f"Вызываем функцию отображения приветственного сообщения для пользователя {user_id}")
-        await show_welcome_message(message, user_id)
-        
+            await message.reply(
+                "❌ Произошла ошибка при сохранении контакта.\n"
+                "Пожалуйста, попробуйте позже или обратитесь в поддержку.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
     except Exception as e:
-        logger.error(f"Ошибка при сохранении контакта: {str(e)}")
+        logger.error(f"Ошибка при обработке контакта: {str(e)}")
         logger.exception("Полный стек ошибки:")
         await message.reply(
-            "❌ Произошла ошибка при сохранении контакта. Пожалуйста, попробуйте позже.",
-            reply_markup=ReplyKeyboardRemove()
+            "❌ Произошла ошибка при обработке контакта.\n"
+            "Пожалуйста, попробуйте позже или обратитесь в поддержку.",
+            reply_markup=types.ReplyKeyboardRemove()
         )
 
 # Функция для отображения приветственного сообщения
@@ -298,30 +228,10 @@ async def show_welcome_message(message: Message, user_id: int):
         
         logger.info(f"Формируем приветственное сообщение для пользователя {user_id}")
         
-        # Получаем реферальный код пользователя
-        logger.debug(f"Пытаемся получить реферальный код для пользователя {user_id}")
-        referral_code = db.get_user_referral_code(user_id)
+        # Получаем реферальный код пользователя с автоматическим созданием
+        logger.debug(f"Пытаемся получить реферальный код для пользователя {user_id} с автосозданием")
+        referral_code = db.get_user_referral_code(user_id, auto_create=True)
         logger.debug(f"Получен реферальный код: {referral_code}")
-        
-        if not referral_code:
-            # Если по какой-то причине код не был сгенерирован ранее
-            logger.warning(f"Реферальный код не найден для пользователя {user_id}, генерируем новый")
-            referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-            logger.debug(f"Сгенерирован новый код: {referral_code}")
-            
-            logger.debug(f"Пытаемся сохранить реферальный код для пользователя {user_id}")
-            result = db.update_user_referral_code(user_id, referral_code)
-            logger.debug(f"Результат сохранения реферального кода: {result}")
-            
-            if not result:
-                logger.error(f"Не удалось сохранить реферальный код для пользователя {user_id}")
-                # Пробуем получить код снова после попытки сохранения
-                logger.debug(f"Повторная попытка получить реферальный код для пользователя {user_id}")
-                referral_code = db.get_user_referral_code(user_id)
-                logger.debug(f"Получен реферальный код после повторной попытки: {referral_code}")
-                
-                if not referral_code:
-                    logger.error(f"Не удалось получить реферальный код даже после попытки создания")
         
         # Проверяем, получен ли код в итоге
         if not referral_code:
@@ -522,6 +432,102 @@ async def debug_command(message: Message):
         logger.exception("Полный стек ошибки:")
         await message.reply("❌ Произошла ошибка при выполнении диагностики. Подробности в логах.")
 
+def process_referral_code(user_id, referral_code):
+    """Обрабатывает реферальный код при регистрации пользователя"""
+    try:
+        logger.info(f"Обработка реферального кода {referral_code} для пользователя {user_id}")
+        
+        # Получаем ID пользователя, создавшего реферальную ссылку
+        referrer_id = db.get_user_by_referral_code(referral_code)
+        logger.debug(f"Найден реферер с ID: {referrer_id}")
+        
+        # Проверяем, что реферер существует и не является текущим пользователем
+        if referrer_id and referrer_id != user_id:
+            logger.info(f"Валидный реферер {referrer_id} для кода {referral_code}")
+            
+            # Сохраняем информацию о реферале
+            ref_saved = db.save_referral_history(
+                referrer_id=referrer_id,
+                referred_id=user_id,
+                referral_code=referral_code,
+                bonus_amount=REFERRAL_BONUS_REQUESTS
+            )
+            logger.debug(f"Результат сохранения реферальной истории: {ref_saved}")
+            
+            if ref_saved:
+                # Добавляем бонусные запросы реферреру
+                logger.info(f"Добавляем {REFERRAL_BONUS_REQUESTS} бонусных запросов пользователю {referrer_id}")
+                bonus_added = db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
+                logger.debug(f"Результат добавления бонусов: {bonus_added}")
+                
+                if bonus_added:
+                    # Асинхронно отправляем уведомление реферреру
+                    asyncio.create_task(send_referral_notification(referrer_id))
+                    return True
+                else:
+                    logger.error(f"Не удалось добавить бонусные запросы пользователю {referrer_id}")
+            else:
+                logger.error(f"Не удалось сохранить историю реферала для {user_id} и {referrer_id}")
+        else:
+            if referrer_id == user_id:
+                logger.warning(f"Пользователь {user_id} пытается использовать свой собственный реферальный код")
+            else:
+                logger.warning(f"Не найден реферер для кода {referral_code}")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке реферального кода: {str(e)}")
+        logger.exception("Полный стек ошибки:")
+    
+    return False
+
+async def send_referral_notification(referrer_id):
+    """Отправляет уведомление о новом реферале"""
+    try:
+        logger.info(f"Отправка уведомления о новом реферале пользователю {referrer_id}")
+        await bot.send_message(
+            referrer_id,
+            f"🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!\n"
+            f"Вам начислено {REFERRAL_BONUS_REQUESTS} дополнительных запросов."
+        )
+        logger.info(f"Уведомление о реферале успешно отправлено пользователю {referrer_id}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомления о реферале: {str(e)}")
+        logger.exception("Полный стек ошибки:")
+
+async def send_welcome_message(user_id):
+    """Отправляет приветственное сообщение с инструкциями новому пользователю"""
+    try:
+        logger.info(f"Отправка приветственного сообщения пользователю {user_id}")
+        
+        # Получаем реферальный код пользователя
+        referral_code = db.get_user_referral_code(user_id)
+        bot_username = (await bot.get_me()).username
+        referral_link = f"https://t.me/{bot_username}?start={referral_code}"
+        
+        # Создаем клавиатуру с основными функциями
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            types.InlineKeyboardButton("💰 Мой баланс", callback_data="show_balance"),
+            types.InlineKeyboardButton("👨‍👩‍👧‍👦 Мои рефералы", callback_data="show_referrals"),
+            types.InlineKeyboardButton("🎁 Бонусы", callback_data="show_bonuses"),
+            types.InlineKeyboardButton("❓ Помощь", callback_data="show_help")
+        )
+        
+        # Отправляем сообщение с информацией
+        await bot.send_message(
+            user_id,
+            f"🎉 *Добро пожаловать в наш Реферальный Бот!*\n\n"
+            f"Теперь вы можете приглашать друзей и получать бонусы.\n\n"
+            f"*Ваша реферальная ссылка:*\n{referral_link}\n\n"
+            f"За каждого приглашенного друга вы получите бонусные баллы!\n\n"
+            f"Используйте меню ниже для управления вашим аккаунтом:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        logger.debug(f"Приветственное сообщение успешно отправлено пользователю {user_id}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке приветственного сообщения: {str(e)}")
+        logger.exception("Полный стек ошибки:")
+
 # Основная функция
 async def main():
     print("Запуск бота...")
@@ -539,5 +545,4 @@ if __name__ == '__main__':
     
     print("Бот запущен!")
     # Запускаем бота
-    import asyncio
     asyncio.run(main())
