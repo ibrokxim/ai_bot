@@ -7,8 +7,8 @@ from django.db.models import Count, Sum, Q
 from django.utils.safestring import mark_safe
 
 from .models import (
-    BotUser, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
-    ReferralHistory, PromoCode, Chat, ChatMessage, Referral
+    BotUser, ReferralCode, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
+    ReferralHistory, PromoCode, Chat, ChatMessage
 )
 
 
@@ -168,7 +168,7 @@ class BotUserAdmin(RussianColumnNameAdmin):
                     ReferralHistory.objects.filter(referred=user).delete()
                     
                     # Удаляем реферальные ссылки
-                    Referral.objects.filter(user=user).delete()
+                    ReferralCode.objects.filter(user=user).delete()
                     
                     # Наконец удаляем самого пользователя
                     user.delete()
@@ -290,11 +290,30 @@ class UserStatisticsAdmin(RussianColumnNameAdmin):
             'account_level': 'Уровень аккаунта'
         }
 
+@admin.register(ReferralCode)
+class ReferralCodeAdmin(RussianColumnNameAdmin):
+    list_display = ('code', 'user', 'created_at', 'is_active', 'total_uses', 'last_used_at')
+    search_fields = ('code', 'user__username', 'user__telegram_id')
+    list_filter = ('is_active', 'created_at')
+    readonly_fields = ('code', 'total_uses', 'last_used_at')
+    
+    def get_column_names(self):
+        """Русские названия столбцов для отображения"""
+        return {
+            'code': 'Реферальный код',
+            'user': 'Пользователь',
+            'created_at': 'Дата создания',
+            'is_active': 'Активен',
+            'total_uses': 'Использований',
+            'last_used_at': 'Последнее использование'
+        }
+
 @admin.register(ReferralHistory)
 class ReferralHistoryAdmin(RussianColumnNameAdmin):
     list_display = ('referrer', 'referred', 'referral_code', 'created_at', 'bonus_requests_added', 'conversion_status', 'converted_at')
-    search_fields = ('referrer__username', 'referred__username', 'referral_code')
-    list_filter = ('conversion_status',)
+    search_fields = ('referrer__username', 'referred__username', 'referral_code__code')
+    list_filter = ('conversion_status', 'created_at')
+    readonly_fields = ('created_at', 'converted_at')
     
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
@@ -401,17 +420,3 @@ class ChatMessageAdmin(RussianColumnNameAdmin):
     
     def has_add_permission(self, request):
         return False # Запретить создание сообщений из админки
-
-@admin.register(Referral)
-class ReferralAdmin(RussianColumnNameAdmin):
-    list_display = ('referral_code', 'user', 'created_at')
-    search_fields = ('referral_code', 'user__username', 'user__telegram_id')
-    readonly_fields = ('referral_code',)
-    
-    def get_column_names(self):
-        """Русские названия столбцов для отображения"""
-        return {
-            'referral_code': 'Реферальный код',
-            'user': 'Пользователь',
-            'created_at': 'Дата создания'
-        }

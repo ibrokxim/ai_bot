@@ -18,10 +18,10 @@ class BotUser(models.Model):
 
     @property
     def referral_code(self):
-        """Получить реферальный код пользователя"""
+        """Получить активный реферальный код пользователя"""
         try:
-            return self.referral.referral_code
-        except Referral.DoesNotExist:
+            return self.referral_codes.filter(is_active=True).first().code
+        except AttributeError:
             return None
 
     # Добавляем свойства для поддержки аутентификации в DRF
@@ -59,14 +59,17 @@ class BotUser(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name} (@{self.username})"
 
-class Referral(models.Model):
+class ReferralCode(models.Model):
     id = models.AutoField(primary_key=True)
-    user = models.OneToOneField(BotUser, on_delete=models.CASCADE, db_column='user_id', related_name='referral')
-    referral_code = models.CharField(max_length=255, unique=True)
+    user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id', related_name='referral_codes')
+    code = models.CharField(max_length=255, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    total_uses = models.IntegerField(default=0)
+    last_used_at = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
-        if not self.referral_code:
+        if not self.code:
             # Генерируем код на основе имени пользователя или telegram_id
             base = self.user.username or str(self.user.telegram_id)
             # Берем первые 4 символа из base (в верхнем регистре) и добавляем 4 случайные цифры
@@ -74,23 +77,23 @@ class Referral(models.Model):
             import string
             prefix = base[:4].upper()
             suffix = ''.join(random.choices(string.digits, k=4))
-            self.referral_code = f"{prefix}{suffix}"
+            self.code = f"{prefix}{suffix}"
         super().save(*args, **kwargs)
 
     class Meta:
         managed = True
-        db_table = 'referrals'
-        verbose_name = 'Реферальная ссылка'
-        verbose_name_plural = 'Реферальные ссылки'
+        db_table = 'referral_codes'
+        verbose_name = 'Реферальный код'
+        verbose_name_plural = 'Реферальные коды'
 
     def __str__(self):
-        return f"{self.referral_code} ({self.user})"
+        return f"{self.code} ({self.user})"
 
 class ReferralHistory(models.Model):
     id = models.AutoField(primary_key=True)
     referrer = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referrals_sent', db_column='referrer_id')
     referred = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referral_source', db_column='referred_id', null=True, blank=True)
-    referral_code = models.CharField(max_length=255)
+    referral_code = models.ForeignKey(ReferralCode, on_delete=models.CASCADE, related_name='usage_history')
     created_at = models.DateTimeField(auto_now_add=True)
     bonus_requests_added = models.IntegerField(default=0)
     conversion_status = models.CharField(max_length=50, default='registered')
@@ -106,6 +109,14 @@ class ReferralHistory(models.Model):
     def __str__(self):
         referred_str = f" → {self.referred}" if self.referred else ""
         return f"{self.referrer}{referred_str} ({self.created_at})"
+
+    def save(self, *args, **kwargs):
+        # Увеличиваем счетчик использований реферального кода
+        if self.referral_code:
+            self.referral_code.total_uses += 1
+            self.referral_code.last_used_at = self.created_at
+            self.referral_code.save()
+        super().save(*args, **kwargs)
 
 class Plan(models.Model):
     id = models.AutoField(primary_key=True)
