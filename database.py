@@ -11,16 +11,8 @@ from config import DB_CONFIG
 # Загрузка переменных окружения
 load_dotenv()
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
+# Создаем логгер для модуля database
+logger = logging.getLogger('bot.database')
 
 # Константы
 DEFAULT_REQUESTS = 10  # Начальное количество запросов для нового пользователя
@@ -29,6 +21,7 @@ def get_db_connection():
     """
     Создает и возвращает соединение с базой данных
     """
+    logger.debug("Создаем новое соединение с базой данных")
     return pymysql.connect(
         host=DB_CONFIG['host'],
         user=DB_CONFIG['user'],
@@ -272,10 +265,16 @@ class Database:
         
         :param config: Словарь с параметрами подключения к базе данных
         """
+        logger.debug("Инициализация объекта Database")
         self.config = config
         self.conn = None
-        self.connect()
-        self._create_tables()
+        try:
+            self.connect()
+            self._create_tables()
+            logger.info("Инициализация Database завершена успешно")
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации Database: {str(e)}")
+            logger.exception("Полный стек ошибки:")
     
     def get_connection(self):
         """
@@ -283,111 +282,164 @@ class Database:
         
         :return: Соединение с базой данных
         """
-        return mysql.connector.connect(**self.config)
+        logger.debug("Создание нового соединения с базой данных")
+        try:
+            conn = mysql.connector.connect(**self.config)
+            logger.debug("Соединение с базой данных успешно создано")
+            return conn
+        except Exception as e:
+            logger.error(f"Ошибка при создании соединения с БД: {str(e)}")
+            raise
 
     def connect(self):
         """Установка соединения с базой данных"""
         try:
+            logger.debug("Попытка установить соединение с базой данных")
             self.conn = mysql.connector.connect(**self.config)
-            logging.info("Успешное подключение к базе данных")
-        except mysql.connector.Error as e:
-            logging.error(f"Ошибка подключения к базе данных: {e}")
-            raise
+            logger.info("Успешное подключение к базе данных")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка подключения к базе данных: {str(e)}")
+            logger.exception("Полный стек ошибки:")
+            return False
     
     def _create_tables(self):
         """Создание необходимых таблиц, если они не существуют"""
-        cursor = self.conn.cursor()
+        logger.debug("Начало создания необходимых таблиц")
         
-        # Создание таблицы пользователей (без удаления существующих таблиц)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id BIGINT PRIMARY KEY,
-                username VARCHAR(255),
-                first_name VARCHAR(255),
-                last_name VARCHAR(255),
-                chat_id BIGINT,
-                is_bot BOOLEAN DEFAULT FALSE,
-                language_code VARCHAR(10),
-                contact VARCHAR(255),
-                is_active BOOLEAN DEFAULT TRUE,
-                requests_left INT DEFAULT 5,
-                registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ''')
-        
-        # Создание таблицы реферальных кодов
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS referral_codes (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                code VARCHAR(20) UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(telegram_id)
-                ON DELETE CASCADE ON UPDATE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ''')
-        
-        # Проверяем наличие таблицы реферальной истории
-        cursor.execute("SHOW TABLES LIKE 'referral_history'")
-        referral_history_exists = cursor.fetchone() is not None
-        
-        if referral_history_exists:
-            # Проверяем структуру таблицы
-            cursor.execute("DESCRIBE referral_history")
-            columns = {row[0]: row for row in cursor.fetchall()}
+        try:
+            if not self.conn or not self.conn.is_connected():
+                logger.warning("Соединение с БД отсутствует, пытаемся создать новое")
+                if not self.connect():
+                    logger.error("Не удалось установить соединение с базой данных")
+                    return
             
-            # Добавляем отсутствующие столбцы, если нужно
-            if 'referral_code' not in columns:
+            cursor = self.conn.cursor()
+            
+            # Создание таблицы пользователей (без удаления существующих таблиц)
+            logger.debug("Создание таблицы users")
+            try:
                 cursor.execute('''
-                    ALTER TABLE referral_history 
-                    ADD COLUMN referral_code VARCHAR(50) NULL AFTER referred_id
+                    CREATE TABLE IF NOT EXISTS users (
+                        telegram_id BIGINT PRIMARY KEY,
+                        username VARCHAR(255),
+                        first_name VARCHAR(255),
+                        last_name VARCHAR(255),
+                        chat_id BIGINT,
+                        is_bot BOOLEAN DEFAULT FALSE,
+                        language_code VARCHAR(10),
+                        contact VARCHAR(255),
+                        is_active BOOLEAN DEFAULT TRUE,
+                        requests_left INT DEFAULT 5,
+                        registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
-                logging.info("Добавлен столбец referral_code в таблицу referral_history")
+                logger.debug("Таблица users создана успешно")
+            except Exception as e:
+                logger.error(f"Ошибка при создании таблицы users: {str(e)}")
+                return
+            
+            # Создание таблицы реферальных кодов
+            logger.debug("Создание таблицы referral_codes")
+            try:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS referral_codes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        code VARCHAR(20) UNIQUE NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+                        ON DELETE CASCADE ON UPDATE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                logger.debug("Таблица referral_codes создана успешно")
+            except Exception as e:
+                logger.error(f"Ошибка при создании таблицы referral_codes: {str(e)}")
+                return
+            
+            # Проверяем наличие таблицы реферальной истории
+            logger.debug("Проверка наличия таблицы referral_history")
+            try:
+                cursor.execute("SHOW TABLES LIKE 'referral_history'")
+                referral_history_exists = cursor.fetchone() is not None
                 
-            if 'bonus_requests_added' not in columns:
-                cursor.execute('''
-                    ALTER TABLE referral_history 
-                    ADD COLUMN bonus_requests_added INT DEFAULT 0 AFTER referral_code
-                ''')
-                logging.info("Добавлен столбец bonus_requests_added в таблицу referral_history")
+                if referral_history_exists:
+                    logger.debug("Таблица referral_history существует, проверяем структуру")
+                    # Проверяем структуру таблицы
+                    cursor.execute("DESCRIBE referral_history")
+                    columns = cursor.fetchall()
+                    column_names = [row[0] for row in columns]
+                    logger.debug(f"Найденные столбцы таблицы referral_history: {column_names}")
+                    
+                    # Добавляем отсутствующие столбцы, если нужно
+                    if 'referral_code' not in column_names:
+                        logger.debug("Добавляем столбец referral_code в таблицу referral_history")
+                        cursor.execute('''
+                            ALTER TABLE referral_history 
+                            ADD COLUMN referral_code VARCHAR(50) NULL AFTER referred_id
+                        ''')
+                        logger.info("Добавлен столбец referral_code в таблицу referral_history")
+                        
+                    if 'bonus_requests_added' not in column_names:
+                        logger.debug("Добавляем столбец bonus_requests_added в таблицу referral_history")
+                        cursor.execute('''
+                            ALTER TABLE referral_history 
+                            ADD COLUMN bonus_requests_added INT DEFAULT 0 AFTER referral_code
+                        ''')
+                        logger.info("Добавлен столбец bonus_requests_added в таблицу referral_history")
+                        
+                    if 'conversion_status' not in column_names:
+                        logger.debug("Добавляем столбец conversion_status в таблицу referral_history")
+                        cursor.execute('''
+                            ALTER TABLE referral_history 
+                            ADD COLUMN conversion_status VARCHAR(50) DEFAULT 'registered' AFTER bonus_requests_added
+                        ''')
+                        logger.info("Добавлен столбец conversion_status в таблицу referral_history")
+                        
+                    if 'converted_at' not in column_names:
+                        logger.debug("Добавляем столбец converted_at в таблицу referral_history")
+                        cursor.execute('''
+                            ALTER TABLE referral_history 
+                            ADD COLUMN converted_at TIMESTAMP NULL AFTER conversion_status
+                        ''')
+                        logger.info("Добавлен столбец converted_at в таблицу referral_history")
+                else:
+                    # Создание таблицы реферальной истории с полным набором полей
+                    logger.debug("Таблица referral_history не существует, создаем новую")
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS referral_history (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            referrer_id BIGINT NOT NULL,
+                            referred_id BIGINT NOT NULL,
+                            referral_code VARCHAR(50) NULL,
+                            bonus_requests_added INT DEFAULT 0,
+                            conversion_status VARCHAR(50) DEFAULT 'registered',
+                            converted_at TIMESTAMP NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE KEY unique_referral (referrer_id, referred_id),
+                            FOREIGN KEY (referrer_id) REFERENCES users(telegram_id)
+                            ON DELETE CASCADE ON UPDATE CASCADE,
+                            FOREIGN KEY (referred_id) REFERENCES users(telegram_id)
+                            ON DELETE CASCADE ON UPDATE CASCADE
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    ''')
+                    logger.info("Создана таблица referral_history")
+            except Exception as e:
+                logger.error(f"Ошибка при обработке таблицы referral_history: {str(e)}")
                 
-            if 'conversion_status' not in columns:
-                cursor.execute('''
-                    ALTER TABLE referral_history 
-                    ADD COLUMN conversion_status VARCHAR(50) DEFAULT 'registered' AFTER bonus_requests_added
-                ''')
-                logging.info("Добавлен столбец conversion_status в таблицу referral_history")
-                
-            if 'converted_at' not in columns:
-                cursor.execute('''
-                    ALTER TABLE referral_history 
-                    ADD COLUMN converted_at TIMESTAMP NULL AFTER conversion_status
-                ''')
-                logging.info("Добавлен столбец converted_at в таблицу referral_history")
-        else:
-            # Создание таблицы реферальной истории с полным набором полей
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS referral_history (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    referrer_id BIGINT NOT NULL,
-                    referred_id BIGINT NOT NULL,
-                    referral_code VARCHAR(50) NULL,
-                    bonus_requests_added INT DEFAULT 0,
-                    conversion_status VARCHAR(50) DEFAULT 'registered',
-                    converted_at TIMESTAMP NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE KEY unique_referral (referrer_id, referred_id),
-                    FOREIGN KEY (referrer_id) REFERENCES users(telegram_id)
-                    ON DELETE CASCADE ON UPDATE CASCADE,
-                    FOREIGN KEY (referred_id) REFERENCES users(telegram_id)
-                    ON DELETE CASCADE ON UPDATE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ''')
-            logging.info("Создана таблица referral_history")
+            try:
+                self.conn.commit()
+                logger.info("Все изменения структуры базы данных успешно сохранены")
+            except Exception as e:
+                logger.error(f"Ошибка при фиксации изменений структуры базы данных: {str(e)}")
+                self.conn.rollback()
+            
+            cursor.close()
+            logger.info("Структура базы данных проверена и обновлена")
         
-        self.conn.commit()
-        cursor.close()
-        logging.info("Структура базы данных проверена и обновлена")
+        except Exception as e:
+            logger.error(f"Общая ошибка при создании таблиц: {str(e)}")
+            logger.exception("Полный стек ошибки:")
     
     def save_user(self, user_id: int, username: str = None, first_name: str = None, 
                   last_name: str = None, chat_id: Optional[int] = None, 
@@ -501,19 +553,38 @@ class Database:
         :return: Словарь с данными пользователя или None, если пользователь не найден
         """
         try:
+            logger.debug(f"Получение данных пользователя {telegram_id} из базы данных")
+            
             if not self.conn or not self.conn.is_connected():
+                logger.debug(f"Соединение с БД отсутствует или закрыто, открываем новое соединение")
                 self.connect()
+                
+            if not self.conn or not self.conn.is_connected():
+                logger.error(f"Не удалось установить соединение с базой данных")
+                return None
             
             cursor = self.conn.cursor(dictionary=True)
-            cursor.execute("""
-                SELECT * FROM users WHERE telegram_id = %s
-            """, (telegram_id,))
+            
+            logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
+            query = "SELECT * FROM users WHERE telegram_id = %s"
+            logger.debug(f"SQL запрос: {query}, параметры: ({telegram_id},)")
+            
+            cursor.execute(query, (telegram_id,))
             
             user = cursor.fetchone()
             cursor.close()
+            
+            if user:
+                logger.info(f"Пользователь {telegram_id} найден в базе данных")
+                logger.debug(f"Полученные данные: {user}")
+            else:
+                logger.warning(f"Пользователь {telegram_id} не найден в базе данных")
+            
             return user
-        except mysql.connector.Error as e:
-            logging.error(f"Ошибка при получении пользователя {telegram_id}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении пользователя {telegram_id}: {str(e)}")
+            logger.exception("Полный стек ошибки:")
             return None
 
     def get_user_by_referral_code(self, referral_code: str) -> Optional[int]:
