@@ -360,7 +360,7 @@ class Database:
                         id INT AUTO_INCREMENT PRIMARY KEY,
                         user_id BIGINT NOT NULL,
                         code VARCHAR(20) UNIQUE NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (user_id) REFERENCES users(telegram_id)
                         ON DELETE CASCADE ON UPDATE CASCADE
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -542,8 +542,8 @@ class Database:
                 
                 if referral_code:
                     cursor.execute("""
-                        INSERT INTO referral_codes (user_id, code)
-                        VALUES (%s, %s)
+                        INSERT INTO referral_codes (user_id, code, registration_date)
+                        VALUES (%s, %s, NOW())
                         ON DUPLICATE KEY UPDATE code = VALUES(code)
                     """, (user_id, referral_code))
 
