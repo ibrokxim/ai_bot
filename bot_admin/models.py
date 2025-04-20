@@ -20,8 +20,8 @@ class BotUser(models.Model):
     def referral_code(self):
         """Получить реферальный код пользователя"""
         try:
-            return self.referralcode_set.first().code
-        except AttributeError:
+            return self.referral.referral_code
+        except Referral.DoesNotExist:
             return None
 
     # Добавляем свойства для поддержки аутентификации в DRF
@@ -59,20 +59,32 @@ class BotUser(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name} (@{self.username})"
 
-class ReferralCode(models.Model):
+class Referral(models.Model):
     id = models.AutoField(primary_key=True)
-    user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
-    code = models.CharField(max_length=20, unique=True)
+    user = models.OneToOneField(BotUser, on_delete=models.CASCADE, db_column='user_id', related_name='referral')
+    referral_code = models.CharField(max_length=255, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.referral_code:
+            # Генерируем код на основе имени пользователя или telegram_id
+            base = self.user.username or str(self.user.telegram_id)
+            # Берем первые 4 символа из base (в верхнем регистре) и добавляем 4 случайные цифры
+            import random
+            import string
+            prefix = base[:4].upper()
+            suffix = ''.join(random.choices(string.digits, k=4))
+            self.referral_code = f"{prefix}{suffix}"
+        super().save(*args, **kwargs)
 
     class Meta:
         managed = True
-        db_table = 'referral_codes'
-        verbose_name = 'Реферальный код'
-        verbose_name_plural = 'Реферальные коды'
+        db_table = 'referrals'
+        verbose_name = 'Реферальная ссылка'
+        verbose_name_plural = 'Реферальные ссылки'
 
     def __str__(self):
-        return f"{self.code} ({self.user})"
+        return f"{self.referral_code} ({self.user})"
 
 class ReferralHistory(models.Model):
     id = models.AutoField(primary_key=True)
@@ -302,21 +314,6 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}..."
-
-class Referral(models.Model):
-    id = models.AutoField(primary_key=True)
-    user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
-    referral_code = models.CharField(max_length=255, unique=True)
-    created_at = models.DateTimeField()
-
-    class Meta:
-        managed = True
-        db_table = 'referrals'
-        verbose_name = 'Реферальная ссылка'
-        verbose_name_plural = 'Реферальные ссылки'
-
-    def __str__(self):
-        return f"{self.referral_code} ({self.user})"
 
 class Request(models.Model):
     id = models.AutoField(primary_key=True)

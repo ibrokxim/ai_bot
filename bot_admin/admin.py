@@ -109,10 +109,10 @@ class RussianColumnNameAdmin(admin.ModelAdmin):
 
 @admin.register(BotUser)
 class BotUserAdmin(RussianColumnNameAdmin):
-    list_display = ('telegram_id', 'username', 'first_name', 'last_name', 'is_bot', 'language_code', 'chat_id', 'contact', 'is_active', 'requests_left', 'registration_date', 'referral_code')
-    search_fields = ('telegram_id', 'username', 'first_name', 'last_name', 'contact')
+    list_display = ('telegram_id', 'username', 'first_name', 'last_name', 'referral_code', 'is_bot', 'language_code', 'chat_id', 'contact', 'is_active', 'requests_left', 'registration_date')
+    search_fields = ('telegram_id', 'username', 'first_name', 'last_name', 'referral_code')
     list_filter = ('is_bot', 'is_active', 'language_code')
-    readonly_fields = ('telegram_id', 'registration_date', 'referral_code')
+    readonly_fields = ('telegram_id', 'referral_code')
     ordering = ('-registration_date',)
     actions = ['delete_user_with_data']
     
@@ -316,18 +316,20 @@ class UserStatisticsAdmin(RussianColumnNameAdmin):
 
 @admin.register(ReferralHistory)
 class ReferralHistoryAdmin(RussianColumnNameAdmin):
-    list_display = ('referrer', 'referred', 'created_at')
-    search_fields = ('referrer__username', 'referrer__telegram_id', 'referred__username', 'referred__telegram_id')
-    list_filter = ('created_at',)
-    readonly_fields = ('created_at',)
-    ordering = ('-created_at',)
+    list_display = ('referrer', 'referred', 'referral_code', 'created_at', 'bonus_requests_added', 'conversion_status', 'converted_at')
+    search_fields = ('referrer__username', 'referred__username', 'referral_code')
+    list_filter = ('conversion_status',)
     
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
-            'referrer': 'Пригласивший',
+            'referrer': 'Реферер',
             'referred': 'Приглашенный',
-            'created_at': 'Дата создания'
+            'referral_code': 'Реферальный код',
+            'created_at': 'Дата создания',
+            'bonus_requests_added': 'Добавлено бонусных запросов',
+            'conversion_status': 'Статус конверсии',
+            'converted_at': 'Дата конверсии'
         }
 
 @admin.register(PromoCode)
@@ -426,16 +428,14 @@ class ChatMessageAdmin(RussianColumnNameAdmin):
 
 @admin.register(Referral)
 class ReferralAdmin(RussianColumnNameAdmin):
-    list_display = ('user', 'referral_code', 'created_at')
-    search_fields = ('user__username', 'user__telegram_id', 'referral_code')
-    list_filter = ('created_at',)
-    readonly_fields = ('created_at',)
-    ordering = ('-created_at',)
+    list_display = ('referral_code', 'user', 'created_at')
+    search_fields = ('referral_code', 'user__username', 'user__telegram_id')
+    readonly_fields = ('referral_code',)
     
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
-            'user': 'Пользователь',
             'referral_code': 'Реферальный код',
+            'user': 'Пользователь',
             'created_at': 'Дата создания'
         }
