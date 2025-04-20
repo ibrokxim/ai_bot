@@ -153,7 +153,13 @@ class BotUserAdmin(RussianColumnNameAdmin):
         try:
             with transaction.atomic():
                 for user in queryset:
-                    # Удаляем связанные объекты
+                    # Сначала удаляем все связанные сообщения чатов
+                    ChatMessage.objects.filter(chat__user=user).delete()
+                    
+                    # Затем удаляем сами чаты
+                    Chat.objects.filter(user=user).delete()
+                    
+                    # Удаляем остальные связанные объекты
                     UserPlan.objects.filter(user=user).delete()
                     Payment.objects.filter(user=user).delete()
                     RequestUsage.objects.filter(user=user).delete()
@@ -170,12 +176,6 @@ class BotUserAdmin(RussianColumnNameAdmin):
                     
                     # Удаляем реферальные коды
                     ReferralCode.objects.filter(user=user).delete()
-                    
-                    # Удаляем чаты и сообщения
-                    chats = Chat.objects.filter(user=user)
-                    for chat in chats:
-                        ChatMessage.objects.filter(chat=chat).delete()
-                    chats.delete()
                     
                     # Наконец удаляем самого пользователя
                     user.delete()
