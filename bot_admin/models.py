@@ -297,3 +297,18 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}..."
+
+class Referral(models.Model):
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
+    referral_code = models.CharField(max_length=50, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'referrals'
+        verbose_name = 'Реферальная ссылка'
+        verbose_name_plural = 'Реферальные ссылки'
+
+    def __str__(self):
+        return f"{self.referral_code} ({self.user})"

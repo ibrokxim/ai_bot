@@ -8,7 +8,7 @@ from django.utils.safestring import mark_safe
 
 from .models import (
     BotUser, ReferralCode, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
-    ReferralHistory, PromoCode, Chat, ChatMessage
+    ReferralHistory, PromoCode, Chat, ChatMessage, Referral
 )
 
 
@@ -174,8 +174,9 @@ class BotUserAdmin(RussianColumnNameAdmin):
                     except (ImportError, AttributeError):
                         pass  # Модель не существует или не импортируется
                     
-                    # Удаляем реферальные коды
+                    # Удаляем реферальные коды и ссылки
                     ReferralCode.objects.filter(user=user).delete()
+                    Referral.objects.filter(user=user).delete()
                     
                     # Наконец удаляем самого пользователя
                     user.delete()
@@ -422,3 +423,19 @@ class ChatMessageAdmin(RussianColumnNameAdmin):
     
     def has_add_permission(self, request):
         return False # Запретить создание сообщений из админки
+
+@admin.register(Referral)
+class ReferralAdmin(RussianColumnNameAdmin):
+    list_display = ('user', 'referral_code', 'created_at')
+    search_fields = ('user__username', 'user__telegram_id', 'referral_code')
+    list_filter = ('created_at',)
+    readonly_fields = ('created_at',)
+    ordering = ('-created_at',)
+    
+    def get_column_names(self):
+        """Русские названия столбцов для отображения"""
+        return {
+            'user': 'Пользователь',
+            'referral_code': 'Реферальный код',
+            'created_at': 'Дата создания'
+        }
