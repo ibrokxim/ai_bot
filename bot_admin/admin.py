@@ -7,7 +7,7 @@ from django.db.models import Count, Sum, Q
 from django.utils.safestring import mark_safe
 
 from .models import (
-    BotUser, Referral, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
+    BotUser, ReferralCode, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
     ReferralHistory, PromoCode, Chat, ChatMessage
 )
 
@@ -109,10 +109,10 @@ class RussianColumnNameAdmin(admin.ModelAdmin):
 
 @admin.register(BotUser)
 class BotUserAdmin(RussianColumnNameAdmin):
-    list_display = ('user_id', 'telegram_id', 'username', 'first_name', 'last_name', 'user_contact', 'language_code', 'requests_left', 'is_active', 'registration_date')
-    search_fields = ('username', 'telegram_id', 'first_name', 'last_name', 'contact')
-    list_filter = ('is_active', 'is_bot', 'registration_date', 'language_code')
-    readonly_fields = ('registration_date',)
+    list_display = ('telegram_id', 'username', 'first_name', 'last_name', 'is_bot', 'language_code', 'chat_id', 'contact', 'is_active', 'requests_left', 'registration_date', 'referral_code')
+    search_fields = ('telegram_id', 'username', 'first_name', 'last_name', 'contact')
+    list_filter = ('is_bot', 'is_active', 'language_code')
+    readonly_fields = ('telegram_id', 'registration_date', 'referral_code')
     ordering = ('-registration_date',)
     actions = ['delete_user_with_data']
     
@@ -123,16 +123,18 @@ class BotUserAdmin(RussianColumnNameAdmin):
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
-            'user_id': 'ID',
-            'telegram_id': 'Telegram ID',
+            'telegram_id': 'ID в Telegram',
             'username': 'Имя пользователя',
             'first_name': 'Имя',
             'last_name': 'Фамилия',
-            'user_contact': 'Контакт',
+            'is_bot': 'Бот',
             'language_code': 'Язык',
-            'requests_left': 'Осталось запросов',
+            'chat_id': 'ID чата',
+            'contact': 'Контакт',
             'is_active': 'Активен',
-            'registration_date': 'Дата регистрации'
+            'requests_left': 'Осталось запросов',
+            'registration_date': 'Дата регистрации',
+            'referral_code': 'Реферальный код'
         }
     
     @admin.display(description='Контакт')
@@ -157,7 +159,7 @@ class BotUserAdmin(RussianColumnNameAdmin):
                     RequestUsage.objects.filter(user=user).delete()
                     UserStatistics.objects.filter(user=user).delete()
                     ReferralHistory.objects.filter(referrer=user).delete()
-                    ReferralHistory.objects.filter(referred_user=user).delete()
+                    ReferralHistory.objects.filter(referred=user).delete()
                     
                     # Проверяем существование модели PromoCodeUsage
                     try:
@@ -167,7 +169,7 @@ class BotUserAdmin(RussianColumnNameAdmin):
                         pass  # Модель не существует или не импортируется
                     
                     # Удаляем реферальные коды
-                    Referral.objects.filter(user=user).delete()
+                    ReferralCode.objects.filter(user=user).delete()
                     
                     # Удаляем чаты и сообщения
                     chats = Chat.objects.filter(user=user)
@@ -191,10 +193,10 @@ class BotUserAdmin(RussianColumnNameAdmin):
                 messages.ERROR
             )
 
-@admin.register(Referral)
-class ReferralAdmin(RussianColumnNameAdmin):
-    list_display = ('id', 'user', 'referral_code', 'created_at')
-    search_fields = ('user__username', 'referral_code')
+@admin.register(ReferralCode)
+class ReferralCodeAdmin(RussianColumnNameAdmin):
+    list_display = ('user', 'code', 'created_at')
+    search_fields = ('user__username', 'user__telegram_id', 'code')
     list_filter = ('created_at',)
     readonly_fields = ('created_at',)
     ordering = ('-created_at',)
@@ -202,9 +204,8 @@ class ReferralAdmin(RussianColumnNameAdmin):
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
-            'id': 'ID',
             'user': 'Пользователь',
-            'referral_code': 'Реферальный код',
+            'code': 'Реферальный код',
             'created_at': 'Дата создания'
         }
 
@@ -314,22 +315,18 @@ class UserStatisticsAdmin(RussianColumnNameAdmin):
 
 @admin.register(ReferralHistory)
 class ReferralHistoryAdmin(RussianColumnNameAdmin):
-    list_display = ('id', 'referrer', 'referred_user', 'referral_code', 'created_at', 'bonus_requests_added', 'conversion_status')
-    search_fields = ('referrer__username', 'referred_user__username', 'referral_code')
-    list_filter = ('conversion_status', 'created_at')
+    list_display = ('referrer', 'referred', 'created_at')
+    search_fields = ('referrer__username', 'referrer__telegram_id', 'referred__username', 'referred__telegram_id')
+    list_filter = ('created_at',)
     readonly_fields = ('created_at',)
     ordering = ('-created_at',)
     
     def get_column_names(self):
         """Русские названия столбцов для отображения"""
         return {
-            'id': 'ID',
             'referrer': 'Пригласивший',
-            'referred_user': 'Приглашенный',
-            'referral_code': 'Реферальный код',
-            'created_at': 'Дата создания',
-            'bonus_requests_added': 'Добавлено бонусных запросов',
-            'conversion_status': 'Статус конверсии'
+            'referred': 'Приглашенный',
+            'created_at': 'Дата создания'
         }
 
 @admin.register(PromoCode)

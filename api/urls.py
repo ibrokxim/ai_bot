@@ -37,6 +37,7 @@ urlpatterns = [
     path('telegram/requests/', views.DirectTelegramRequestsView.as_view(), name='telegram-requests'),
     path('telegram/use-request/', views.UseRequestByTelegramIDView.as_view(), name='telegram-use-request'),
     path('telegram/user-info/', views.UserInfoByTelegramIDView.as_view(), name='telegram-user-info'),
+    path('telegram/referral-link/', views.ReferralLinkView.as_view(), name='telegram-referral-link'),
 
     # Новые URL для чатов
     path('chats/', views.ChatListView.as_view(), name='chat-list'),

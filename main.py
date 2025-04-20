@@ -77,20 +77,25 @@ async def start_cmd(message: Message, state: FSMContext):
         # Пользователь уже отправил контакт, переводим в состояние registered
         await state.set_state(UserState.registered)
         
-        # Обработка реферального кода, если он есть
-        if referral_code:
-            referrer_id = db.get_user_by_referral_code(referral_code)
-            if referrer_id and referrer_id != user_id:
-                # Сохраняем информацию о реферале
-                db.save_referral_history(referrer_id, user_id)
-                # Добавляем бонусные запросы реферреру
-                db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
-                
         # Показываем приветственное сообщение
         await show_welcome_message(message, user_id)
     else:
-        # Создаем или обновляем пользователя в БД
-        db.save_user(user_id, username, first_name, last_name, language_code, is_bot, chat_id=chat_id)
+        # Создаем или обновляем только базовую информацию пользователя в БД
+        if not user_data:  # Создаем нового пользователя только если его нет в БД
+            db.save_user(
+                user_id=user_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                chat_id=chat_id,
+                is_bot=is_bot,
+                language_code=language_code,
+                is_active=True
+            )
+        
+        if referral_code:
+            # Сохраняем реферальный код для последующего использования
+            await state.update_data(referral_code=referral_code)
         
         # Запрашиваем контакт у пользователя
         contact_button = KeyboardButton(text="📱 Отправить контакт", request_contact=True)
@@ -101,14 +106,13 @@ async def start_cmd(message: Message, state: FSMContext):
         )
         
         await message.reply(
-            "Для продолжения, пожалуйста, поделитесь вашим контактом. "
-            "Нажмите кнопку ниже:",
+            "👋 Добро пожаловать в бота!\n\n"
+            "Для продолжения, пожалуйста, поделитесь вашим контактом, "
+            "нажав кнопку ниже:",
             reply_markup=markup
         )
         
-        # Сохраняем реферальный код в состоянии, если он есть
         await state.set_state(UserState.waiting_for_contact)
-        await state.update_data(referral_code=referral_code)
 
 # Добавляем новую команду для обновления контакта
 @dp.message(Command("update_contact"))
@@ -144,43 +148,50 @@ async def process_contact(message: Message, state: FSMContext):
             return
             
         # Проверяем формат номера телефона
-        if not contact.phone_number.startswith('+'):
-            await message.reply("❌ Номер телефона должен начинаться с '+'")
-            return
+        phone_number = contact.phone_number
+        if not phone_number.startswith('+'):
+            phone_number = '+' + phone_number
             
         # Получаем данные из состояния
         state_data = await state.get_data()
         referral_code = state_data.get('referral_code')
-            
+        
         # Сохраняем контакт пользователя в базе данных
         db.save_user(
-            user_id, 
-            message.from_user.username, 
-            message.from_user.first_name, 
-            message.from_user.last_name, 
-            message.from_user.language_code, 
-            message.from_user.is_bot, 
-            contact,
-            chat_id=chat_id
+            user_id=user_id, 
+            username=message.from_user.username, 
+            first_name=message.from_user.first_name, 
+            last_name=message.from_user.last_name,
+            chat_id=chat_id,
+            contact=phone_number,  # Передаем сам номер телефона, а не объект contact
+            is_bot=message.from_user.is_bot,
+            language_code=message.from_user.language_code,
+            is_active=True
         )
         
-        # Обработка реферального кода, если он есть
+        # Генерируем реферальный код для нового пользователя
+        new_ref_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        db.update_user_referral_code(user_id, new_ref_code)
+        
+        # Обработка реферального кода, если пользователь пришел по ссылке
         if referral_code:
             referrer_id = db.get_user_by_referral_code(referral_code)
             if referrer_id and referrer_id != user_id:
                 # Сохраняем информацию о реферале
                 db.save_referral_history(referrer_id, user_id)
-                # Добавляем бонусные запросы реферреру
+                # Добавляем бонусные запросы только реферреру
                 db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
-        
-        # Генерируем реферальный код для нового пользователя, если его нет
-        user_data = db.get_user(user_id)
-        if not user_data.get('referral_code'):
-            # Генерируем случайный код из 6 символов
-            new_ref_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-            # Сохраняем код в БД
-            db.update_user_referral_code(user_id, new_ref_code)
-        
+                
+                # Уведомляем реферера
+                try:
+                    await bot.send_message(
+                        referrer_id,
+                        f"🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!\n"
+                        f"Вам начислено {REFERRAL_BONUS_REQUESTS} дополнительных запросов."
+                    )
+                except Exception as e:
+                    logging.error(f"Ошибка при отправке уведомления реферреру: {e}")
+
         # Удаляем клавиатуру и отправляем сообщение об успехе
         await message.reply(
             "✅ Ваш контакт успешно сохранен!",
@@ -195,36 +206,26 @@ async def process_contact(message: Message, state: FSMContext):
         
     except Exception as e:
         logging.error(f"Ошибка при сохранении контакта: {e}")
+        logging.exception("Полный стек ошибки:")
         await message.reply(
             "❌ Произошла ошибка при сохранении контакта. Пожалуйста, попробуйте позже.",
             reply_markup=ReplyKeyboardRemove()
         )
 
 # Функция для отображения приветственного сообщения
-async def show_welcome_message(message: Message, user_id):
-    """
-    Показывает приветственное сообщение пользователю
-    """
+async def show_welcome_message(message: Message, user_id: int):
+    """Показывает приветственное сообщение пользователю"""
     # Получаем данные пользователя
     user_data = db.get_user(user_id)
     
     if not user_data:
-        print(f"Пользователь {user_id} не найден в базе данных, создаем новую запись")
-        # Создаем нового пользователя если это новый пользователь
-        db.save_user(
-            user_id, 
-            user_data.get('username'), 
-            user_data.get('first_name'), 
-            user_data.get('last_name'), 
-            user_data.get('language_code'),
-            user_data.get('is_bot')
-        )
-        user_data = db.get_user(user_id)
+        logging.error(f"Пользователь {user_id} не найден в базе данных")
+        return
     
-    # Получаем или создаем реферальный код
-    referral_code = user_data.get('referral_code')
+    # Получаем реферальный код пользователя
+    referral_code = db.get_user_referral_code(user_id)
     if not referral_code:
-        # Генерируем новый код, если его нет
+        # Если по какой-то причине код не был сгенерирован ранее
         referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         db.update_user_referral_code(user_id, referral_code)
     
@@ -243,9 +244,10 @@ async def show_welcome_message(message: Message, user_id):
     await message.reply(
         f"👋 Добро пожаловать в бот!\n\n"
         f"У вас осталось {user_data.get('requests_left', 0)} запросов.\n\n"
-        f"[Ваша реферальная ссылка]({referral_link})\n\n"
+        f"🔗 Ваша реферальная ссылка:\n{referral_link}\n\n"
+        f"Приглашайте друзей и получайте дополнительные запросы!\n"
+        f"За каждого приглашенного друга вы получите {REFERRAL_BONUS_REQUESTS} бонусных запросов.\n\n"
         f"Выберите действие:",
-        parse_mode="Markdown",
         reply_markup=markup
     )
 

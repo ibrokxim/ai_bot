@@ -3,18 +3,25 @@ from django.db import models
 # Create your models here.
 
 class BotUser(models.Model):
-    user_id = models.AutoField(primary_key=True)
-    telegram_id = models.BigIntegerField(unique=True)
+    telegram_id = models.BigIntegerField(primary_key=True)
     username = models.CharField(max_length=255, null=True, blank=True)
     first_name = models.CharField(max_length=255, null=True, blank=True)
     last_name = models.CharField(max_length=255, null=True, blank=True)
     is_bot = models.BooleanField()
     language_code = models.CharField(max_length=10, null=True, blank=True)
-    chat_id = models.BigIntegerField()
+    chat_id = models.BigIntegerField(null=True, blank=True)
     contact = models.CharField(max_length=255, null=True, blank=True)
     is_active = models.BooleanField(null=True, blank=True)
-    requests_left = models.IntegerField(default=10, null=True, blank=True)
-    registration_date = models.DateTimeField()
+    requests_left = models.IntegerField(default=5)
+    registration_date = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def referral_code(self):
+        """Получить реферальный код пользователя"""
+        try:
+            return self.referralcode_set.first().code
+        except AttributeError:
+            return None
 
     # Добавляем свойства для поддержки аутентификации в DRF
     @property
@@ -51,20 +58,37 @@ class BotUser(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name} (@{self.username})"
 
-class Referral(models.Model):
+class ReferralCode(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
-    referral_code = models.CharField(max_length=255, unique=True)
+    code = models.CharField(max_length=20, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = True  # Django будет управлять таблицей
-        db_table = 'referrals'
-        verbose_name = 'Реферальная ссылка'
-        verbose_name_plural = 'Реферальные ссылки'
+        managed = True
+        db_table = 'referral_codes'
+        verbose_name = 'Реферальный код'
+        verbose_name_plural = 'Реферальные коды'
 
     def __str__(self):
-        return f"{self.referral_code} ({self.user})"
+        return f"{self.code} ({self.user})"
+
+class ReferralHistory(models.Model):
+    id = models.AutoField(primary_key=True)
+    referrer = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referrals_sent', db_column='referrer_id')
+    referred = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referral_source', db_column='referred_id')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'referral_history'
+        verbose_name = 'История реферралов'
+        verbose_name_plural = 'История реферралов'
+        unique_together = ('referrer', 'referred')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.referrer} → {self.referred} ({self.created_at})"
 
 class Plan(models.Model):
     id = models.AutoField(primary_key=True)
@@ -178,26 +202,6 @@ class UserStatistics(models.Model):
 
     def __str__(self):
         return f"Статистика: {self.user}"
-
-class ReferralHistory(models.Model):
-    id = models.AutoField(primary_key=True)
-    referrer = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referrals_sent', db_column='referrer_id')
-    referred_user = models.ForeignKey(BotUser, on_delete=models.CASCADE, related_name='referral_source', db_column='referred_user_id')
-    referral_code = models.CharField(max_length=255)
-    created_at = models.DateTimeField(auto_now_add=True)
-    bonus_requests_added = models.IntegerField(default=0)  # Сколько бонусных запросов добавлено реферреру
-    conversion_status = models.CharField(max_length=50, default='registered')  # Статус конверсии (registered, used_bot, purchased)
-    converted_at = models.DateTimeField(null=True, blank=True)  # Дата конверсии (например, первая покупка)
-
-    class Meta:
-        managed = True  # Django будет управлять таблицей
-        db_table = 'referral_history'
-        verbose_name = 'История реферралов'
-        verbose_name_plural = 'История реферралов'
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.referrer} → {self.referred_user} ({self.created_at})"
 
 class PromoCode(models.Model):
     id = models.AutoField(primary_key=True)

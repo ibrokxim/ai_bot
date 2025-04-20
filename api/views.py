@@ -754,13 +754,14 @@ class ChatListView(APIView):
 
 
 class ChatDetailView(APIView):
-    """Удаление чата"""
+    """Удаление и получение чата"""
     authentication_classes = [TelegramIDAuthentication]
     permission_classes = [CustomIsAuthenticated, IsTelegramUser]
 
     def get_user(self, request):
         """Вспомогательный метод для получения пользователя"""
-        telegram_id = request.query_params.get('telegram_id') or request.data.get('telegram_id')
+        telegram_id = request.query_params.get(
+            'telegram_id') or request.data.get('telegram_id')
         if telegram_id:
             try:
                 return BotUser.objects.get(telegram_id=telegram_id)
@@ -768,14 +769,28 @@ class ChatDetailView(APIView):
                 return None
         return request.user
 
-    def delete(self, request, chat_id):
+    def get(self, request, chat_id):
+        """Получение данных о чате"""
         user = self.get_user(request)
         if not user:
             return Response({'success': False, 'message': 'Пользователь не найден'}, status=status.HTTP_404_NOT_FOUND)
 
-        chat = get_object_or_404(Chat, id=chat_id, user=user) # Убедимся, что чат принадлежит пользователю
+        # Убедимся, что чат принадлежит пользователю
+        chat = get_object_or_404(Chat, id=chat_id, user=user)
+        serializer = ChatSerializer(chat)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, chat_id):
+        """Удаление чата"""
+        user = self.get_user(request)
+        if not user:
+            return Response({'success': False, 'message': 'Пользователь не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Убедимся, что чат принадлежит пользователю
+        chat = get_object_or_404(Chat, id=chat_id, user=user)
         chat.delete()
         return Response({'success': True, 'message': 'Чат удален'}, status=status.HTTP_204_NO_CONTENT)
+
 
 
 class ChatMessageListView(APIView):
@@ -948,3 +963,48 @@ class ChatMessageCreateView(APIView):
             'chat': ChatSerializer(chat).data,
             'requests_left': user.requests_left
         })
+
+
+class ReferralLinkView(APIView):
+    """Получение реферальной ссылки пользователя"""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        telegram_id = request.query_params.get('telegram_id')
+        
+        if not telegram_id:
+            return Response({
+                'success': False,
+                'message': 'Не указан telegram_id'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            user = BotUser.objects.get(telegram_id=telegram_id)
+            
+            # Получаем реферальный код пользователя
+            referral_code = user.referral_code
+            
+            if not referral_code:
+                # Если у пользователя нет реферального кода, генерируем новый
+                import random
+                import string
+                referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                user.referral_code = referral_code
+                user.save()
+            
+            # Формируем реферальную ссылку
+            bot_username = settings.BOT_USERNAME
+            referral_link = f"https://t.me/{bot_username}?start={referral_code}"
+            
+            return Response({
+                'success': True,
+                'referral_code': referral_code,
+                'referral_link': referral_link,
+                'bonus_requests': settings.REFERRAL_BONUS_REQUESTS
+            })
+            
+        except BotUser.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Пользователь не найден'
+            }, status=status.HTTP_404_NOT_FOUND)
