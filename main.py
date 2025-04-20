@@ -101,8 +101,7 @@ async def start_cmd(message: Message, state: FSMContext):
                 last_name=last_name,
                 chat_id=chat_id,
                 is_bot=is_bot,
-                language_code=language_code,
-                is_active=True
+                language_code=language_code
             )
         
         if referral_code:
@@ -168,8 +167,7 @@ async def process_contact(message: Message, state: FSMContext):
             chat_id=message.chat.id,
             contact=contact.phone_number,
             is_bot=message.from_user.is_bot,
-            language_code=message.from_user.language_code,
-            is_active=True
+            language_code=message.from_user.language_code
         )
         
         if success:
