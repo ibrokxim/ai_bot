@@ -298,17 +298,7 @@ class Database:
         """Создание необходимых таблиц, если они не существуют"""
         cursor = self.conn.cursor()
         
-        # Удаляем существующие таблицы в правильном порядке
-        try:
-            cursor.execute('DROP TABLE IF EXISTS referral_history')
-            cursor.execute('DROP TABLE IF EXISTS referral_codes')
-            cursor.execute('DROP TABLE IF EXISTS users')
-            self.conn.commit()
-        except mysql.connector.Error as e:
-            logging.error(f"Ошибка при удалении таблиц: {e}")
-            self.conn.rollback()
-        
-        # Создание таблицы пользователей
+        # Создание таблицы пользователей (без удаления существующих таблиц)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 telegram_id BIGINT PRIMARY KEY,
@@ -337,20 +327,63 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        # Создание таблицы реферальной истории
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS referral_history (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                referrer_id BIGINT NOT NULL,
-                referred_id BIGINT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY unique_referral (referrer_id, referred_id),
-                FOREIGN KEY (referrer_id) REFERENCES users(telegram_id)
-                ON DELETE CASCADE ON UPDATE CASCADE,
-                FOREIGN KEY (referred_id) REFERENCES users(telegram_id)
-                ON DELETE CASCADE ON UPDATE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ''')
+        # Проверяем наличие таблицы реферальной истории
+        cursor.execute("SHOW TABLES LIKE 'referral_history'")
+        referral_history_exists = cursor.fetchone() is not None
+        
+        if referral_history_exists:
+            # Проверяем структуру таблицы
+            cursor.execute("DESCRIBE referral_history")
+            columns = {row[0]: row for row in cursor.fetchall()}
+            
+            # Добавляем отсутствующие столбцы, если нужно
+            if 'referral_code' not in columns:
+                cursor.execute('''
+                    ALTER TABLE referral_history 
+                    ADD COLUMN referral_code VARCHAR(50) NULL AFTER referred_id
+                ''')
+                logging.info("Добавлен столбец referral_code в таблицу referral_history")
+                
+            if 'bonus_requests_added' not in columns:
+                cursor.execute('''
+                    ALTER TABLE referral_history 
+                    ADD COLUMN bonus_requests_added INT DEFAULT 0 AFTER referral_code
+                ''')
+                logging.info("Добавлен столбец bonus_requests_added в таблицу referral_history")
+                
+            if 'conversion_status' not in columns:
+                cursor.execute('''
+                    ALTER TABLE referral_history 
+                    ADD COLUMN conversion_status VARCHAR(50) DEFAULT 'registered' AFTER bonus_requests_added
+                ''')
+                logging.info("Добавлен столбец conversion_status в таблицу referral_history")
+                
+            if 'converted_at' not in columns:
+                cursor.execute('''
+                    ALTER TABLE referral_history 
+                    ADD COLUMN converted_at TIMESTAMP NULL AFTER conversion_status
+                ''')
+                logging.info("Добавлен столбец converted_at в таблицу referral_history")
+        else:
+            # Создание таблицы реферальной истории с полным набором полей
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS referral_history (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    referrer_id BIGINT NOT NULL,
+                    referred_id BIGINT NOT NULL,
+                    referral_code VARCHAR(50) NULL,
+                    bonus_requests_added INT DEFAULT 0,
+                    conversion_status VARCHAR(50) DEFAULT 'registered',
+                    converted_at TIMESTAMP NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY unique_referral (referrer_id, referred_id),
+                    FOREIGN KEY (referrer_id) REFERENCES users(telegram_id)
+                    ON DELETE CASCADE ON UPDATE CASCADE,
+                    FOREIGN KEY (referred_id) REFERENCES users(telegram_id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ''')
+            logging.info("Создана таблица referral_history")
         
         self.conn.commit()
         cursor.close()
@@ -494,15 +527,43 @@ class Database:
             if not self.conn or not self.conn.is_connected():
                 self.connect()
             
-            cursor = self.conn.cursor()
+            cursor = self.conn.cursor(dictionary=True)
+            
+            # Сначала пробуем найти в таблице referral_codes
             cursor.execute("""
                 SELECT user_id FROM referral_codes WHERE code = %s
             """, (referral_code,))
             
             result = cursor.fetchone()
-            cursor.close()
             
-            return result[0] if result else None
+            if result:
+                return result['user_id']
+            
+            # Если не нашли, пробуем поискать в таблице users (если там хранятся коды)
+            cursor.execute("""
+                SELECT telegram_id FROM users WHERE referral_code = %s
+            """, (referral_code,))
+            
+            result = cursor.fetchone()
+            
+            if result:
+                return result['telegram_id']
+            
+            # Если и тут не нашли, пробуем в таблице referrals 
+            # (которая используется в alternative_copy.py)
+            try:
+                cursor.execute("""
+                    SELECT user_id FROM referrals WHERE referral_code = %s
+                """, (referral_code,))
+                
+                result = cursor.fetchone()
+                if result:
+                    return result['user_id']
+            except Exception as e:
+                logging.debug(f"Таблица referrals не найдена или другая ошибка: {e}")
+            
+            cursor.close()
+            return None
             
         except mysql.connector.Error as e:
             logging.error(f"Ошибка при поиске пользователя по коду {referral_code}: {e}")
@@ -575,7 +636,7 @@ class Database:
             referrer_id (int): ID пригласившего пользователя
             referred_user_id (int): ID приглашенного пользователя
             referral_code (str, optional): Использованный реферальный код
-            bonus_requests (int): Количество бонусных запросов (не используется)
+            bonus_requests (int): Количество бонусных запросов
             
         Returns:
             bool: True если успешно, False если произошла ошибка
@@ -586,18 +647,50 @@ class Database:
                 logger.warning(f"Пользователь {referred_user_id} уже использовал реферальную систему")
                 return False
 
+            # Получаем реферальный код если не был передан
+            if not referral_code:
+                ref_code = self.get_user_referral_code(referrer_id)
+                referral_code = ref_code if ref_code else "UNKNOWN"
+
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    # Сохраняем историю реферала
-                    sql = """
-                        INSERT INTO referral_history (referrer_id, referred_id, created_at)
-                        VALUES (%s, %s, NOW())
-                    """
-                    cursor.execute(sql, (referrer_id, referred_user_id))
-                    conn.commit()
-
-                    logger.info(f"Реферальная история сохранена: {referrer_id} пригласил {referred_user_id}")
-                    return True
+                    try:
+                        # Проверяем структуру таблицы
+                        cursor.execute("DESCRIBE referral_history")
+                        table_structure = cursor.fetchall()
+                        column_names = [column['Field'] for column in table_structure]
+                        
+                        # Если в таблице есть поле referral_code, используем расширенный запрос
+                        if 'referral_code' in column_names:
+                            sql = """
+                                INSERT INTO referral_history 
+                                (referrer_id, referred_id, referral_code, created_at)
+                                VALUES (%s, %s, %s, NOW())
+                            """
+                            cursor.execute(sql, (referrer_id, referred_user_id, referral_code))
+                        else:
+                            # Базовый запрос для структуры с минимальным набором полей
+                            sql = """
+                                INSERT INTO referral_history 
+                                (referrer_id, referred_id, created_at)
+                                VALUES (%s, %s, NOW())
+                            """
+                            cursor.execute(sql, (referrer_id, referred_user_id))
+                        
+                        conn.commit()
+                        logger.info(f"Реферальная история сохранена: {referrer_id} пригласил {referred_user_id}, код: {referral_code}")
+                        return True
+                    except Exception as e:
+                        conn.rollback()
+                        logger.error(f"SQL ошибка при сохранении реферальной истории: {str(e)}")
+                        # Проверим, существует ли таблица
+                        cursor.execute("SHOW TABLES LIKE 'referral_history'")
+                        table_exists = cursor.fetchone() is not None
+                        if not table_exists:
+                            logger.error("Таблица referral_history не существует, пытаемся создать")
+                            # Пробуем создать таблицу, если она не существует
+                            self._create_tables()
+                        return False
 
         except Exception as e:
             logger.error(f"Ошибка при сохранении реферальной истории: {e}")
@@ -616,6 +709,15 @@ class Database:
                 self.connect()
             
             cursor = self.conn.cursor()
+            
+            # Проверка существования пользователя
+            cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
+            if not cursor.fetchone():
+                logging.error(f"Пользователь {telegram_id} не найден при попытке увеличить запросы")
+                cursor.close()
+                return False
+            
+            # Увеличиваем количество запросов
             cursor.execute("""
                 UPDATE users 
                 SET requests_left = requests_left + %s 
@@ -623,12 +725,19 @@ class Database:
             """, (amount, telegram_id))
             
             self.conn.commit()
+            affected_rows = cursor.rowcount
             cursor.close()
-            logging.info(f"Добавлено {amount} запросов пользователю {telegram_id}")
-            return True
+            
+            if affected_rows > 0:
+                logging.info(f"Добавлено {amount} запросов пользователю {telegram_id}")
+                return True
+            else:
+                logging.error(f"Ни одна строка не была обновлена при добавлении запросов пользователю {telegram_id}")
+                return False
             
         except mysql.connector.Error as e:
-            self.conn.rollback()
+            if self.conn:
+                self.conn.rollback()
             logging.error(f"Ошибка при увеличении запросов для {telegram_id}: {e}")
             return False
 
@@ -758,19 +867,28 @@ class Database:
     def check_referral_used(self, telegram_id, referrer_id):
         """Проверка, использовал ли пользователь уже реферальную ссылку данного реферрера"""
         try:
-            with self.get_connection() as conn:
-                with conn.cursor(dictionary=True) as cursor:
-                    # Проверяем наличие записи в истории реферралов
-                    cursor.execute('''
-                        SELECT id FROM referral_history 
-                        WHERE referred_id = %s AND referrer_id = %s
-                    ''', (telegram_id, referrer_id))
-                    
-                    return cursor.fetchone() is not None
+            if not self.conn or not self.conn.is_connected():
+                self.connect()
+            
+            cursor = self.conn.cursor(dictionary=True)
+            
+            # Проверяем наличие записи в истории реферралов
+            cursor.execute('''
+                SELECT id FROM referral_history 
+                WHERE referred_id = %s AND referrer_id = %s
+            ''', (telegram_id, referrer_id))
+            
+            result = cursor.fetchone() is not None
+            cursor.close()
+            
+            if result:
+                logging.info(f"Пользователь {telegram_id} уже использовал реферальную ссылку от {referrer_id}")
+            
+            return result
 
         except Exception as e:
-            logger.error(f"Ошибка при проверке использования реферальной ссылки: {e}")
-            return False
+            logging.error(f"Ошибка при проверке использования реферальной ссылки: {e}")
+            return False  # В случае ошибки считаем, что код не использовался
 
     def add_bonus_requests(self, user_id: int, amount: int) -> bool:
         """Добавляет бонусные запросы пользователю"""

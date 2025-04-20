@@ -178,9 +178,14 @@ async def process_contact(message: Message, state: FSMContext):
             referrer_id = db.get_user_by_referral_code(referral_code)
             if referrer_id and referrer_id != user_id:
                 # Сохраняем информацию о реферале
-                db.save_referral_history(referrer_id, user_id)
+                db.save_referral_history(referrer_id, user_id, referral_code, REFERRAL_BONUS_REQUESTS)
                 # Добавляем бонусные запросы только реферреру
-                db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
+                success = db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
+                
+                if success:
+                    logging.info(f"Успешно добавлены бонусные запросы {REFERRAL_BONUS_REQUESTS} пользователю {referrer_id}")
+                else:
+                    logging.error(f"Не удалось добавить бонусные запросы пользователю {referrer_id}")
                 
                 # Уведомляем реферера
                 try:
@@ -191,6 +196,10 @@ async def process_contact(message: Message, state: FSMContext):
                     )
                 except Exception as e:
                     logging.error(f"Ошибка при отправке уведомления реферреру: {e}")
+            else:
+                logging.warning(f"Не удалось найти реферера для кода {referral_code} или пользователь пытается использовать свой код")
+        else:
+            logging.info("Нет реферального кода при регистрации пользователя")
 
         # Удаляем клавиатуру и отправляем сообщение об успехе
         await message.reply(
@@ -267,12 +276,29 @@ async def process_invite_friend(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     user_data = db.get_user(user_id)
     
+    if not user_data:
+        await callback_query.answer("Ошибка получения данных пользователя")
+        return
+    
     # Получаем реферальный код
-    referral_code = user_data.get('referral_code')
+    referral_code = db.get_user_referral_code(user_id)
+    
     if not referral_code:
         # Генерируем новый код, если его нет
         referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        db.update_user_referral_code(user_id, referral_code)
+        success = db.update_user_referral_code(user_id, referral_code)
+        
+        if not success:
+            logging.error(f"Не удалось создать реферальный код для пользователя {user_id}")
+            await callback_query.answer("Произошла ошибка при создании реферальной ссылки")
+            return
+        
+        # Проверяем, был ли код действительно создан
+        referral_code = db.get_user_referral_code(user_id)
+        if not referral_code:
+            logging.error(f"Реферальный код не был сохранен для пользователя {user_id}")
+            await callback_query.answer("Произошла ошибка при создании реферальной ссылки")
+            return
     
     # Формируем реферальную ссылку
     bot_username = (await bot.get_me()).username
@@ -283,7 +309,7 @@ async def process_invite_friend(callback_query: types.CallbackQuery):
         user_id,
         f"Поделитесь этой ссылкой с друзьями и получите бонусные запросы:\n\n"
         f"[Ваша реферальная ссылка]({referral_link})\n\n"
-        f"За каждого приглашенного друга вы получите 5 дополнительных запросов!",
+        f"За каждого приглашенного друга вы получите {REFERRAL_BONUS_REQUESTS} дополнительных запросов!",
         parse_mode="Markdown"
     )
 
