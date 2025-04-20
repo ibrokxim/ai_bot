@@ -3,17 +3,18 @@ from django.db import models
 # Create your models here.
 
 class BotUser(models.Model):
-    telegram_id = models.BigIntegerField(primary_key=True)
+    user_id = models.AutoField(primary_key=True)
+    telegram_id = models.BigIntegerField(unique=True)
     username = models.CharField(max_length=255, null=True, blank=True)
     first_name = models.CharField(max_length=255, null=True, blank=True)
     last_name = models.CharField(max_length=255, null=True, blank=True)
     is_bot = models.BooleanField()
     language_code = models.CharField(max_length=10, null=True, blank=True)
-    chat_id = models.BigIntegerField(null=True, blank=True)
+    chat_id = models.BigIntegerField()
     contact = models.CharField(max_length=255, null=True, blank=True)
     is_active = models.BooleanField(null=True, blank=True)
-    requests_left = models.IntegerField(default=5)
-    registration_date = models.DateTimeField(auto_now_add=True)
+    requests_left = models.IntegerField(null=True, blank=True)
+    registration_date = models.DateTimeField()
 
     @property
     def referral_code(self):
@@ -49,11 +50,11 @@ class BotUser(models.Model):
         return False
 
     class Meta:
-        managed = True  # Django будет управлять таблицей
-        db_table = 'users'  # Указываем имя таблицы
+        managed = True
+        db_table = 'users'
         verbose_name = 'Пользователь бота'
         verbose_name_plural = 'Пользователи бота'
-        ordering = ['-registration_date']  # Сортировка по дате регистрации (сначала новые)
+        ordering = ['-registration_date']
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} (@{self.username})"
@@ -305,8 +306,8 @@ class ChatMessage(models.Model):
 class Referral(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
-    referral_code = models.CharField(max_length=50, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    referral_code = models.CharField(max_length=255, unique=True)
+    created_at = models.DateTimeField()
 
     class Meta:
         managed = True
@@ -316,3 +317,19 @@ class Referral(models.Model):
 
     def __str__(self):
         return f"{self.referral_code} ({self.user})"
+
+class Request(models.Model):
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id')
+    query = models.TextField()
+    response = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'requests'
+        verbose_name = 'Запрос'
+        verbose_name_plural = 'Запросы'
+
+    def __str__(self):
+        return f"{self.user}: {self.query[:50]}..."
