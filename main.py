@@ -147,41 +147,39 @@ async def update_contact_cmd(message: Message, state: FSMContext):
 
 # Улучшаем обработчик получения контакта
 @dp.message(F.contact, UserState.waiting_for_contact)
-async def process_contact(message):
+async def process_contact(message: Message, state: FSMContext):
     """Обрабатывает полученный контакт пользователя"""
     try:
         user_id = message.from_user.id
         contact = message.contact
         logger.info(f"Получен контакт от пользователя {user_id}: {contact.phone_number}")
         
-        # Сохраняем данные пользователя
-        username = message.from_user.username or ""
-        user_data = {
-            'username': username,
-            'phone': contact.phone_number
-        }
-        logger.debug(f"Данные пользователя для сохранения: {user_data}")
-        
-        # Получаем реферальный код из сессии, если есть
-        referral_code = user_sessions.get(user_id, {}).get('referral_code', None)
+        # Получаем данные из состояния FSM
+        state_data = await state.get_data()
+        referral_code = state_data.get('referral_code')
         logger.debug(f"Найден реферальный код {referral_code} для пользователя {user_id}")
         
-        # Сохраняем пользователя и получаем результат операции
-        user_saved = db.save_user(user_id, user_data)
-        logger.info(f"Пользователь {user_id} сохранен: {user_saved}")
+        # Сохраняем пользователя с контактом
+        success = db.save_user(
+            user_id=user_id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+            chat_id=message.chat.id,
+            contact=contact.phone_number,
+            is_bot=message.from_user.is_bot,
+            language_code=message.from_user.language_code,
+            is_active=True
+        )
         
-        if user_saved:
+        if success:
             # Обрабатываем реферальный код, если есть
             if referral_code:
                 logger.info(f"Обрабатываем реферальный код {referral_code} для пользователя {user_id}")
                 process_referral_code(user_id, referral_code)
             
-            # Автоматически генерируем реферальный код, если его еще нет
-            user_referral_code = db.get_user_referral_code(user_id)
-            if not user_referral_code:
-                logger.info(f"Генерируем новый реферальный код для пользователя {user_id}")
-                user_referral_code = db.generate_referral_code(user_id)
-                logger.debug(f"Сгенерирован код {user_referral_code}")
+            # Устанавливаем состояние registered
+            await state.set_state(UserState.registered)
             
             # Отправляем сообщение об успешной регистрации
             await message.reply(
@@ -190,8 +188,8 @@ async def process_contact(message):
                 reply_markup=types.ReplyKeyboardRemove()
             )
             
-            # Отправляем приветственное сообщение с инструкциями
-            await send_welcome_message(user_id)
+            # Показываем приветственное сообщение
+            await show_welcome_message(message, user_id)
         else:
             await message.reply(
                 "❌ Произошла ошибка при сохранении контакта.\n"
