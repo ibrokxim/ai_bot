@@ -7,7 +7,7 @@ from django.db.models import Count, Sum, Q
 from django.utils.safestring import mark_safe
 
 from .models import (
-    BotUser, ReferralCode, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
+    BotUser, Plan, UserPlan, Payment, RequestUsage, UserStatistics,
     ReferralHistory, PromoCode, Chat, ChatMessage, Referral
 )
 
@@ -167,15 +167,7 @@ class BotUserAdmin(RussianColumnNameAdmin):
                     ReferralHistory.objects.filter(referrer=user).delete()
                     ReferralHistory.objects.filter(referred=user).delete()
                     
-                    # Проверяем существование модели PromoCodeUsage
-                    try:
-                        from .models import PromoCodeUsage
-                        PromoCodeUsage.objects.filter(user=user).delete()
-                    except (ImportError, AttributeError):
-                        pass  # Модель не существует или не импортируется
-                    
-                    # Удаляем реферальные коды и ссылки
-                    ReferralCode.objects.filter(user=user).delete()
+                    # Удаляем реферальные ссылки
                     Referral.objects.filter(user=user).delete()
                     
                     # Наконец удаляем самого пользователя
@@ -193,22 +185,6 @@ class BotUserAdmin(RussianColumnNameAdmin):
                 f'Ошибка при удалении пользователей: {str(e)}',
                 messages.ERROR
             )
-
-@admin.register(ReferralCode)
-class ReferralCodeAdmin(RussianColumnNameAdmin):
-    list_display = ('user', 'code', 'created_at')
-    search_fields = ('user__username', 'user__telegram_id', 'code')
-    list_filter = ('created_at',)
-    readonly_fields = ('created_at',)
-    ordering = ('-created_at',)
-    
-    def get_column_names(self):
-        """Русские названия столбцов для отображения"""
-        return {
-            'user': 'Пользователь',
-            'code': 'Реферальный код',
-            'created_at': 'Дата создания'
-        }
 
 @admin.register(Plan)
 class PlanAdmin(RussianColumnNameAdmin):
