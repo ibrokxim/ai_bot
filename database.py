@@ -334,7 +334,8 @@ class Database:
             try:
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
-                        telegram_id BIGINT PRIMARY KEY,
+                        user_id INT AUTO_INCREMENT PRIMARY KEY,
+                        telegram_id BIGINT UNIQUE NOT NULL,
                         username VARCHAR(255),
                         first_name VARCHAR(255),
                         last_name VARCHAR(255),
@@ -1233,15 +1234,19 @@ class Database:
                 # Создание таблицы пользователей
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
-                        user_id INTEGER PRIMARY KEY,
-                        username TEXT,
-                        first_name TEXT,
-                        last_name TEXT,
-                        chat_id INTEGER,
-                        requests_left INTEGER DEFAULT 10,
-                        referral_code TEXT UNIQUE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
+                        user_id INT AUTO_INCREMENT PRIMARY KEY,
+                        telegram_id BIGINT UNIQUE NOT NULL,
+                        username VARCHAR(255),
+                        first_name VARCHAR(255),
+                        last_name VARCHAR(255),
+                        chat_id BIGINT,
+                        is_bot BOOLEAN DEFAULT FALSE,
+                        language_code VARCHAR(10),
+                        contact VARCHAR(255),
+                        is_active BOOLEAN DEFAULT TRUE,
+                        requests_left INT DEFAULT 5,
+                        registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
                 
                 self.conn.commit()
