@@ -524,64 +524,90 @@ class Database:
         :return: telegram_id пользователя или None, если код не найден
         """
         try:
+            logger.info(f"Ищем пользователя по реферальному коду: {referral_code}")
+            
             if not self.conn or not self.conn.is_connected():
                 self.connect()
             
             cursor = self.conn.cursor(dictionary=True)
+            found_user_id = None
             
-            # Сначала пробуем найти в таблице referral_codes
-            cursor.execute("""
-                SELECT user_id FROM referral_codes WHERE code = %s
-            """, (referral_code,))
-            
-            result = cursor.fetchone()
-            
-            if result:
-                return result['user_id']
-            
-            # Если не нашли, пробуем поискать в таблице users (если там хранятся коды)
-            cursor.execute("""
-                SELECT telegram_id FROM users WHERE referral_code = %s
-            """, (referral_code,))
-            
-            result = cursor.fetchone()
-            
-            if result:
-                return result['telegram_id']
-            
-            # Если и тут не нашли, пробуем в таблице referrals 
-            # (которая используется в alternative_copy.py)
+            # Сначала пробуем найти в таблице referral_codes (основная таблица)
             try:
                 cursor.execute("""
-                    SELECT user_id FROM referrals WHERE referral_code = %s
+                    SELECT user_id FROM referral_codes WHERE code = %s
                 """, (referral_code,))
                 
                 result = cursor.fetchone()
+                
                 if result:
-                    return result['user_id']
+                    found_user_id = result['user_id']
+                    logger.info(f"Найден пользователь {found_user_id} в таблице referral_codes")
             except Exception as e:
-                logging.debug(f"Таблица referrals не найдена или другая ошибка: {e}")
+                logger.warning(f"Ошибка при поиске в таблице referral_codes: {e}")
+            
+            # Если не нашли, пробуем поискать в таблице users (если там хранятся коды)
+            if not found_user_id:
+                try:
+                    cursor.execute("""
+                        SELECT telegram_id FROM users WHERE referral_code = %s
+                    """, (referral_code,))
+                    
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        found_user_id = result['telegram_id']
+                        logger.info(f"Найден пользователь {found_user_id} в таблице users")
+                except Exception as e:
+                    logger.warning(f"Ошибка при поиске в таблице users: {e}")
+            
+            # Если и тут не нашли, пробуем в таблице referrals 
+            if not found_user_id:
+                try:
+                    cursor.execute("""
+                        SELECT user_id FROM referrals WHERE referral_code = %s
+                    """, (referral_code,))
+                    
+                    result = cursor.fetchone()
+                    if result:
+                        found_user_id = result['user_id']
+                        logger.info(f"Найден пользователь {found_user_id} в таблице referrals")
+                except Exception as e:
+                    logger.warning(f"Таблица referrals не найдена или другая ошибка: {e}")
             
             cursor.close()
-            return None
             
-        except mysql.connector.Error as e:
-            logging.error(f"Ошибка при поиске пользователя по коду {referral_code}: {e}")
+            if not found_user_id:
+                logger.warning(f"Не найден пользователь для реферального кода {referral_code}")
+            
+            return found_user_id
+            
+        except Exception as e:
+            logger.error(f"Ошибка при поиске пользователя по коду {referral_code}: {e}")
             return None
 
     def update_user_referral_code(self, telegram_id: int, referral_code: str) -> bool:
         """
-        Обновление реферального кода пользователя
+        Обновление или создание реферального кода пользователя
         
         :param telegram_id: ID пользователя в Telegram
         :param referral_code: Новый реферальный код
         :return: True, если обновление успешно, иначе False
         """
         try:
+            logger.info(f"Обновление реферального кода для пользователя {telegram_id}: {referral_code}")
+            
             if not self.conn or not self.conn.is_connected():
                 self.connect()
             
             cursor = self.conn.cursor()
+            
+            # Проверяем, существует ли пользователь
+            cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
+            if not cursor.fetchone():
+                logger.error(f"Пользователь {telegram_id} не найден в базе данных")
+                cursor.close()
+                return False
             
             # Проверяем, есть ли уже код у пользователя
             cursor.execute("""
@@ -592,6 +618,7 @@ class Database:
             
             if existing_code:
                 # Обновляем существующий код
+                logger.info(f"Обновляем существующий реферальный код для {telegram_id}")
                 cursor.execute("""
                     UPDATE referral_codes 
                     SET code = %s 
@@ -599,18 +626,33 @@ class Database:
                 """, (referral_code, telegram_id))
             else:
                 # Создаем новый код
+                logger.info(f"Создаем новый реферальный код для {telegram_id}")
                 cursor.execute("""
                     INSERT INTO referral_codes (user_id, code)
                     VALUES (%s, %s)
                 """, (telegram_id, referral_code))
             
             self.conn.commit()
-            cursor.close()
-            return True
             
-        except mysql.connector.Error as e:
-            self.conn.rollback()
-            logging.error(f"Ошибка при обновлении реферального кода для {telegram_id}: {e}")
+            # Проверяем, сохранился ли код
+            cursor.execute("""
+                SELECT code FROM referral_codes WHERE user_id = %s
+            """, (telegram_id,))
+            
+            saved_code = cursor.fetchone()
+            cursor.close()
+            
+            if saved_code and saved_code[0] == referral_code:
+                logger.info(f"Реферальный код {referral_code} успешно сохранен для пользователя {telegram_id}")
+                return True
+            else:
+                logger.error(f"Ошибка при сохранении реферального кода: код в БД не соответствует запрошенному")
+                return False
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            logger.error(f"Ошибка при обновлении реферального кода для {telegram_id}: {e}")
             return False
 
     def get_user_referral_code(self, telegram_id: int) -> Optional[str]:
@@ -651,45 +693,50 @@ class Database:
             if not referral_code:
                 ref_code = self.get_user_referral_code(referrer_id)
                 referral_code = ref_code if ref_code else "UNKNOWN"
+                
+            logger.info(f"Сохраняем историю реферала: реферер {referrer_id}, приглашенный {referred_user_id}, код {referral_code}")
 
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
                     try:
-                        # Проверяем структуру таблицы
-                        cursor.execute("DESCRIBE referral_history")
-                        table_structure = cursor.fetchall()
-                        column_names = [column['Field'] for column in table_structure]
+                        # Сначала проверяем наличие таблицы
+                        cursor.execute("SHOW TABLES LIKE 'referral_history'")
+                        table_exists = cursor.fetchone() is not None
                         
-                        # Если в таблице есть поле referral_code, используем расширенный запрос
-                        if 'referral_code' in column_names:
+                        if not table_exists:
+                            logger.error("Таблица referral_history не существует")
+                            # Создаем таблицу с полным набором полей
+                            self._create_tables()
+                        
+                        # Пробуем вставить запись со всеми дополнительными полями
+                        try:
                             sql = """
                                 INSERT INTO referral_history 
-                                (referrer_id, referred_id, referral_code, created_at)
-                                VALUES (%s, %s, %s, NOW())
+                                (referrer_id, referred_id, referral_code, bonus_requests_added, conversion_status, created_at)
+                                VALUES (%s, %s, %s, %s, %s, NOW())
                             """
-                            cursor.execute(sql, (referrer_id, referred_user_id, referral_code))
-                        else:
-                            # Базовый запрос для структуры с минимальным набором полей
+                            cursor.execute(sql, (referrer_id, referred_user_id, referral_code, bonus_requests, 'registered'))
+                            conn.commit()
+                            logger.info(f"Реферальная история сохранена с полными данными: {referrer_id} пригласил {referred_user_id}, код: {referral_code}")
+                            return True
+                        except Exception as e:
+                            conn.rollback()
+                            logger.warning(f"Не удалось сохранить полную запись: {e}. Пробуем базовый вариант.")
+                            
+                            # Пробуем упрощенный запрос с минимальным набором полей
                             sql = """
                                 INSERT INTO referral_history 
                                 (referrer_id, referred_id, created_at)
                                 VALUES (%s, %s, NOW())
                             """
                             cursor.execute(sql, (referrer_id, referred_user_id))
-                        
-                        conn.commit()
-                        logger.info(f"Реферальная история сохранена: {referrer_id} пригласил {referred_user_id}, код: {referral_code}")
-                        return True
+                            conn.commit()
+                            logger.info(f"Реферальная история сохранена с базовыми данными: {referrer_id} пригласил {referred_user_id}")
+                            return True
+                            
                     except Exception as e:
                         conn.rollback()
                         logger.error(f"SQL ошибка при сохранении реферальной истории: {str(e)}")
-                        # Проверим, существует ли таблица
-                        cursor.execute("SHOW TABLES LIKE 'referral_history'")
-                        table_exists = cursor.fetchone() is not None
-                        if not table_exists:
-                            logger.error("Таблица referral_history не существует, пытаемся создать")
-                            # Пробуем создать таблицу, если она не существует
-                            self._create_tables()
                         return False
 
         except Exception as e:
@@ -705,17 +752,24 @@ class Database:
         :return: True, если обновление успешно, иначе False
         """
         try:
+            logger.info(f"Попытка увеличить количество запросов на {amount} для пользователя {telegram_id}")
+            
             if not self.conn or not self.conn.is_connected():
                 self.connect()
             
             cursor = self.conn.cursor()
             
             # Проверка существования пользователя
-            cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
-            if not cursor.fetchone():
-                logging.error(f"Пользователь {telegram_id} не найден при попытке увеличить запросы")
+            cursor.execute("SELECT telegram_id, requests_left FROM users WHERE telegram_id = %s", (telegram_id,))
+            user_data = cursor.fetchone()
+            
+            if not user_data:
+                logger.error(f"Пользователь {telegram_id} не найден при попытке увеличить запросы")
                 cursor.close()
                 return False
+                
+            current_requests = user_data[1] if len(user_data) > 1 else 0
+            logger.info(f"Текущее количество запросов пользователя {telegram_id}: {current_requests}")
             
             # Увеличиваем количество запросов
             cursor.execute("""
@@ -726,19 +780,25 @@ class Database:
             
             self.conn.commit()
             affected_rows = cursor.rowcount
+            
+            # Проверяем, изменилось ли количество запросов
+            cursor.execute("SELECT requests_left FROM users WHERE telegram_id = %s", (telegram_id,))
+            new_data = cursor.fetchone()
+            new_requests = new_data[0] if new_data else 0
+            
             cursor.close()
             
-            if affected_rows > 0:
-                logging.info(f"Добавлено {amount} запросов пользователю {telegram_id}")
+            if affected_rows > 0 and new_requests > current_requests:
+                logger.info(f"Успешно добавлено {amount} запросов пользователю {telegram_id}. Новое значение: {new_requests}")
                 return True
             else:
-                logging.error(f"Ни одна строка не была обновлена при добавлении запросов пользователю {telegram_id}")
+                logger.error(f"Не удалось добавить запросы пользователю {telegram_id}. Запросов до: {current_requests}, после: {new_requests}")
                 return False
             
-        except mysql.connector.Error as e:
+        except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            logging.error(f"Ошибка при увеличении запросов для {telegram_id}: {e}")
+            logger.error(f"Ошибка при увеличении запросов для {telegram_id}: {e}")
             return False
 
     def decrease_user_requests(self, telegram_id: int, amount: int = 1) -> bool:
@@ -867,10 +927,19 @@ class Database:
     def check_referral_used(self, telegram_id, referrer_id):
         """Проверка, использовал ли пользователь уже реферальную ссылку данного реферрера"""
         try:
+            logger.info(f"Проверяем, использовал ли пользователь {telegram_id} реферальную ссылку {referrer_id}")
+            
             if not self.conn or not self.conn.is_connected():
                 self.connect()
             
             cursor = self.conn.cursor(dictionary=True)
+            
+            # Проверяем наличие таблицы
+            cursor.execute("SHOW TABLES LIKE 'referral_history'")
+            if not cursor.fetchone():
+                logger.error("Таблица referral_history не существует")
+                cursor.close()
+                return False
             
             # Проверяем наличие записи в истории реферралов
             cursor.execute('''
@@ -878,16 +947,19 @@ class Database:
                 WHERE referred_id = %s AND referrer_id = %s
             ''', (telegram_id, referrer_id))
             
-            result = cursor.fetchone() is not None
+            result = cursor.fetchone()
+            is_used = result is not None
             cursor.close()
             
-            if result:
-                logging.info(f"Пользователь {telegram_id} уже использовал реферальную ссылку от {referrer_id}")
+            if is_used:
+                logger.info(f"Пользователь {telegram_id} уже использовал реферальную ссылку от {referrer_id}")
+            else:
+                logger.info(f"Пользователь {telegram_id} еще не использовал реферальную ссылку от {referrer_id}")
             
-            return result
+            return is_used
 
         except Exception as e:
-            logging.error(f"Ошибка при проверке использования реферальной ссылки: {e}")
+            logger.error(f"Ошибка при проверке использования реферальной ссылки: {e}")
             return False  # В случае ошибки считаем, что код не использовался
 
     def add_bonus_requests(self, user_id: int, amount: int) -> bool:

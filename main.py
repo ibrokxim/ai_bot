@@ -151,51 +151,75 @@ async def process_contact(message: Message, state: FSMContext):
         phone_number = contact.phone_number
         if not phone_number.startswith('+'):
             phone_number = '+' + phone_number
+        
+        logging.info(f"Получен контакт от пользователя {user_id}: {phone_number}")
             
         # Получаем данные из состояния
         state_data = await state.get_data()
         referral_code = state_data.get('referral_code')
+        logging.info(f"Реферальный код из состояния: {referral_code}")
         
         # Сохраняем контакт пользователя в базе данных
-        db.save_user(
+        user_saved = db.save_user(
             user_id=user_id, 
             username=message.from_user.username, 
             first_name=message.from_user.first_name, 
             last_name=message.from_user.last_name,
             chat_id=chat_id,
-            contact=phone_number,  # Передаем сам номер телефона, а не объект contact
+            contact=phone_number,
             is_bot=message.from_user.is_bot,
             language_code=message.from_user.language_code,
             is_active=True
         )
         
+        if not user_saved:
+            logging.error(f"Не удалось сохранить пользователя {user_id}")
+            await message.reply(
+                "❌ Произошла ошибка при сохранении данных. Пожалуйста, попробуйте позже.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
         # Генерируем реферальный код для нового пользователя
         new_ref_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        db.update_user_referral_code(user_id, new_ref_code)
+        logging.info(f"Сгенерирован новый реферальный код для пользователя {user_id}: {new_ref_code}")
+        
+        ref_code_saved = db.update_user_referral_code(user_id, new_ref_code)
+        if not ref_code_saved:
+            logging.error(f"Не удалось сохранить реферальный код {new_ref_code} для пользователя {user_id}")
         
         # Обработка реферального кода, если пользователь пришел по ссылке
         if referral_code:
+            logging.info(f"Обрабатываем реферальный код: {referral_code}")
             referrer_id = db.get_user_by_referral_code(referral_code)
+            
             if referrer_id and referrer_id != user_id:
-                # Сохраняем информацию о реферале
-                db.save_referral_history(referrer_id, user_id, referral_code, REFERRAL_BONUS_REQUESTS)
-                # Добавляем бонусные запросы только реферреру
-                success = db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
+                logging.info(f"Найден реферер {referrer_id} для кода {referral_code}")
                 
-                if success:
-                    logging.info(f"Успешно добавлены бонусные запросы {REFERRAL_BONUS_REQUESTS} пользователю {referrer_id}")
+                # Сохраняем информацию о реферале и добавляем бонусные запросы
+                ref_history_saved = db.save_referral_history(referrer_id, user_id, referral_code, REFERRAL_BONUS_REQUESTS)
+                
+                if ref_history_saved:
+                    # Добавляем бонусные запросы только реферреру
+                    success = db.increase_user_requests(referrer_id, REFERRAL_BONUS_REQUESTS)
+                    
+                    if success:
+                        logging.info(f"Успешно добавлены бонусные запросы {REFERRAL_BONUS_REQUESTS} пользователю {referrer_id}")
+                        
+                        # Уведомляем реферера
+                        try:
+                            await bot.send_message(
+                                referrer_id,
+                                f"🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!\n"
+                                f"Вам начислено {REFERRAL_BONUS_REQUESTS} дополнительных запросов."
+                            )
+                            logging.info(f"Отправлено уведомление реферреру {referrer_id}")
+                        except Exception as e:
+                            logging.error(f"Ошибка при отправке уведомления реферреру: {e}")
+                    else:
+                        logging.error(f"Не удалось добавить бонусные запросы пользователю {referrer_id}")
                 else:
-                    logging.error(f"Не удалось добавить бонусные запросы пользователю {referrer_id}")
-                
-                # Уведомляем реферера
-                try:
-                    await bot.send_message(
-                        referrer_id,
-                        f"🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!\n"
-                        f"Вам начислено {REFERRAL_BONUS_REQUESTS} дополнительных запросов."
-                    )
-                except Exception as e:
-                    logging.error(f"Ошибка при отправке уведомления реферреру: {e}")
+                    logging.error(f"Не удалось сохранить историю реферала между {referrer_id} и {user_id}")
             else:
                 logging.warning(f"Не удалось найти реферера для кода {referral_code} или пользователь пытается использовать свой код")
         else:
@@ -224,41 +248,71 @@ async def process_contact(message: Message, state: FSMContext):
 # Функция для отображения приветственного сообщения
 async def show_welcome_message(message: Message, user_id: int):
     """Показывает приветственное сообщение пользователю"""
-    # Получаем данные пользователя
-    user_data = db.get_user(user_id)
+    try:
+        # Получаем данные пользователя
+        user_data = db.get_user(user_id)
+        
+        if not user_data:
+            logging.error(f"Пользователь {user_id} не найден в базе данных")
+            await message.reply(
+                "❌ Произошла ошибка при получении данных. Пожалуйста, попробуйте позже.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
+        logging.info(f"Формируем приветственное сообщение для пользователя {user_id}")
+        
+        # Получаем реферальный код пользователя
+        referral_code = db.get_user_referral_code(user_id)
+        if not referral_code:
+            # Если по какой-то причине код не был сгенерирован ранее
+            logging.warning(f"Реферальный код не найден для пользователя {user_id}, генерируем новый")
+            referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            result = db.update_user_referral_code(user_id, referral_code)
+            
+            if not result:
+                logging.error(f"Не удалось сохранить реферальный код для пользователя {user_id}")
+                # Пробуем получить код снова после попытки сохранения
+                referral_code = db.get_user_referral_code(user_id)
+                if not referral_code:
+                    logging.error(f"Не удалось получить реферальный код даже после попытки создания")
+        
+        # Проверяем, получен ли код в итоге
+        if not referral_code:
+            logging.error(f"Не удалось получить или создать реферальный код для пользователя {user_id}")
+            referral_link = "Не удалось сгенерировать ссылку"
+        else:
+            # Формируем реферальную ссылку
+            bot_username = (await bot.get_me()).username
+            referral_link = f"https://t.me/{bot_username}?start={referral_code}"
+            logging.info(f"Реферальная ссылка для пользователя {user_id}: {referral_link}")
+        
+        # Создаем клавиатуру
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💬 Начать чат", callback_data="start_chat")],
+            [InlineKeyboardButton(text="👥 Пригласить друга", callback_data="invite_friend")],
+            [InlineKeyboardButton(text="📊 Мой профиль", callback_data="profile")]
+        ])
+        
+        # Отправляем приветственное сообщение
+        await message.reply(
+            f"👋 Добро пожаловать в бот!\n\n"
+            f"У вас осталось {user_data.get('requests_left', 0)} запросов.\n\n"
+            f"🔗 Ваша реферальная ссылка:\n{referral_link}\n\n"
+            f"Приглашайте друзей и получайте дополнительные запросы!\n"
+            f"За каждого приглашенного друга вы получите {REFERRAL_BONUS_REQUESTS} бонусных запросов.\n\n"
+            f"Выберите действие:",
+            reply_markup=markup
+        )
+        logging.info(f"Приветственное сообщение отправлено пользователю {user_id}")
     
-    if not user_data:
-        logging.error(f"Пользователь {user_id} не найден в базе данных")
-        return
-    
-    # Получаем реферальный код пользователя
-    referral_code = db.get_user_referral_code(user_id)
-    if not referral_code:
-        # Если по какой-то причине код не был сгенерирован ранее
-        referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        db.update_user_referral_code(user_id, referral_code)
-    
-    # Формируем реферальную ссылку
-    bot_username = (await bot.get_me()).username
-    referral_link = f"https://t.me/{bot_username}?start={referral_code}"
-    
-    # Создаем клавиатуру
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💬 Начать чат", callback_data="start_chat")],
-        [InlineKeyboardButton(text="👥 Пригласить друга", callback_data="invite_friend")],
-        [InlineKeyboardButton(text="📊 Мой профиль", callback_data="profile")]
-    ])
-    
-    # Отправляем приветственное сообщение
-    await message.reply(
-        f"👋 Добро пожаловать в бот!\n\n"
-        f"У вас осталось {user_data.get('requests_left', 0)} запросов.\n\n"
-        f"🔗 Ваша реферальная ссылка:\n{referral_link}\n\n"
-        f"Приглашайте друзей и получайте дополнительные запросы!\n"
-        f"За каждого приглашенного друга вы получите {REFERRAL_BONUS_REQUESTS} бонусных запросов.\n\n"
-        f"Выберите действие:",
-        reply_markup=markup
-    )
+    except Exception as e:
+        logging.error(f"Ошибка при отображении приветственного сообщения: {e}")
+        logging.exception("Полный стек ошибки:")
+        await message.reply(
+            "❌ Произошла ошибка. Пожалуйста, попробуйте позже.",
+            reply_markup=ReplyKeyboardRemove()
+        )
 
 # Обработчики callback-запросов от inline-кнопок
 @dp.callback_query(F.data == 'start_chat', UserState.registered)
