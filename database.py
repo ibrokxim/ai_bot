@@ -285,7 +285,13 @@ class Database:
         """
         logger.debug("Создание нового соединения с базой данных")
         try:
-            conn = mysql.connector.connect(**self.config)
+            conn = mysql.connector.connect(
+                host=self.config['host'],
+                user=self.config['user'],
+                password=self.config['password'],
+                database=self.config['db'],
+                charset=self.config['charset']
+            )
             logger.debug("Соединение с базой данных успешно создано")
             return conn
         except Exception as e:
@@ -296,7 +302,13 @@ class Database:
         """Установка соединения с базой данных"""
         try:
             logger.debug("Попытка установить соединение с базой данных")
-            self.conn = mysql.connector.connect(**self.config)
+            self.conn = mysql.connector.connect(
+                host=self.config['host'],
+                user=self.config['user'],
+                password=self.config['password'],
+                database=self.config['db'],
+                charset=self.config['charset']
+            )
             logger.info("Успешное подключение к базе данных")
             return True
         except Exception as e:
@@ -586,10 +598,7 @@ class Database:
             cursor = self.conn.cursor(dictionary=True)
             
             logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
-            query = "SELECT * FROM users WHERE telegram_id = %s"
-            logger.debug(f"SQL запрос: {query}, параметры: ({telegram_id},)")
-            
-            cursor.execute(query, (telegram_id,))
+            cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
             
             user = cursor.fetchone()
             cursor.close()
