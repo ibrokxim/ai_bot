@@ -487,93 +487,85 @@ class Database:
                     logger.error("Не удалось подключиться к базе данных")
                     return False
             
-            conn = self.get_connection()
+            cursor = self.conn.cursor(dictionary=True)
             
-            with conn:
-                with conn.cursor() as cursor:
-                    # Проверяем, существует ли пользователь
-                    cursor.execute("""
-                        SELECT telegram_id FROM users WHERE telegram_id = %s
-                    """, (user_id,))
-                    user_exists = cursor.fetchone()
+            try:
+                # Проверяем, существует ли пользователь
+                cursor.execute("""
+                    SELECT telegram_id FROM users WHERE telegram_id = %s
+                """, (user_id,))
+                user_exists = cursor.fetchone()
 
-                    if user_exists:
-                        # Обновляем существующего пользователя
-                        sql = """
-                            UPDATE users 
-                            SET username = %s,
-                                first_name = %s,
-                                last_name = %s,
-                                chat_id = %s,
-                                is_bot = %s,
-                                language_code = %s,
-                                contact = %s,
-                                is_active = %s
-                            WHERE telegram_id = %s
-                        """
-                        params = (
-                            username, first_name, last_name, chat_id,
-                            is_bot, language_code, contact, is_active,
-                            user_id
-                        )
-                        logger.info(f"Обновление пользователя {user_id}. SQL: {sql}")
-                        logger.info(f"Параметры запроса: {params}")
-                        cursor.execute(sql, params)
-                        logger.info(f"Запрос выполнен. Проверяем результат...")
-                        
-                        # Проверяем, что данные действительно обновились
-                        cursor.execute("SELECT contact FROM users WHERE telegram_id = %s", (user_id,))
-                        result = cursor.fetchone()
-                        logger.info(f"Текущее значение контакта в БД: {result[0] if result else None}")
-                    else:
-                        # Создаем нового пользователя
-                        sql = """
-                            INSERT INTO users (
-                                telegram_id, username, first_name, last_name,
-                                chat_id, is_bot, language_code, contact,
-                                is_active, requests_left, registration_date
-                            ) VALUES (
-                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
-                            )
-                        """
-                        params = (
-                            user_id, username, first_name, last_name,
+                if user_exists:
+                    # Обновляем существующего пользователя
+                    sql = """
+                        UPDATE users 
+                        SET username = %s,
+                            first_name = %s,
+                            last_name = %s,
+                            chat_id = %s,
+                            is_bot = %s,
+                            language_code = %s,
+                            contact = %s,
+                            is_active = %s
+                        WHERE telegram_id = %s
+                    """
+                    params = (
+                        username, first_name, last_name, chat_id,
+                        is_bot, language_code, contact, is_active,
+                        user_id
+                    )
+                    logger.info(f"Обновление пользователя {user_id}")
+                    cursor.execute(sql, params)
+                else:
+                    # Создаем нового пользователя
+                    sql = """
+                        INSERT INTO users (
+                            telegram_id, username, first_name, last_name,
                             chat_id, is_bot, language_code, contact,
-                            is_active, DEFAULT_REQUESTS
+                            is_active, requests_left, registration_date
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
                         )
-                        logger.info(f"Создание нового пользователя. SQL: {sql}")
-                        logger.info(f"Параметры запроса: {params}")
-                        
-                        try:
-                            cursor.execute(sql, params)
-                            # Проверяем, что данные действительно сохранились
-                            cursor.execute("SELECT contact FROM users WHERE telegram_id = %s", (user_id,))
-                            result = cursor.fetchone()
-                            logger.info(f"Текущее значение контакта в БД: {result[0] if result else None}")
-                        except Exception as e:
-                            logger.error(f"Ошибка при создании пользователя: {str(e)}")
-                            
-                            # Если таблица не существует, создаем ее
-                            if "doesn't exist" in str(e).lower() or "table 'users' doesn't exist" in str(e).lower():
-                                logger.warning("Таблица users не существует, пытаемся создать таблицы")
-                                self._create_tables()
-                                
-                                # Повторяем попытку вставки
-                                cursor.execute(sql, params)
-                                logger.info("Пользователь успешно создан после создания таблицы")
+                    """
+                    params = (
+                        user_id, username, first_name, last_name,
+                        chat_id, is_bot, language_code, contact,
+                        is_active, DEFAULT_REQUESTS
+                    )
+                    logger.info(f"Создание нового пользователя {user_id}")
+                    cursor.execute(sql, params)
 
-                    # Если есть реферальный код, обрабатываем его
-                    if referral_code:
-                        referrer_id = self.get_referrer_by_code(referral_code)
-                        if referrer_id and referrer_id != user_id:
-                            self.save_referral_history(referrer_id, user_id, referral_code)
+                # Генерируем и сохраняем реферальный код, если его нет
+                if not referral_code:
+                    referral_code = self.generate_referral_code(user_id)
+                
+                if referral_code:
+                    cursor.execute("""
+                        INSERT INTO referral_codes (user_id, code)
+                        VALUES (%s, %s)
+                        ON DUPLICATE KEY UPDATE code = VALUES(code)
+                    """, (user_id, referral_code))
 
-                    conn.commit()
-                    logger.info(f"Пользователь {user_id} успешно сохранен/обновлен")
-                    return True
+                self.conn.commit()
+                
+                # Проверяем, что данные действительно сохранились
+                cursor.execute("SELECT contact FROM users WHERE telegram_id = %s", (user_id,))
+                result = cursor.fetchone()
+                logger.info(f"Текущее значение контакта в БД: {result['contact'] if result else None}")
+                
+                return True
+
+            except Exception as e:
+                self.conn.rollback()
+                logger.error(f"Ошибка при сохранении пользователя: {str(e)}")
+                return False
+            
+            finally:
+                cursor.close()
 
         except Exception as e:
-            logger.error(f"Ошибка при сохранении пользователя: {str(e)}")
+            logger.error(f"Общая ошибка при сохранении пользователя: {str(e)}")
             logger.exception("Полный стек ошибки:")
             return False
 
@@ -595,21 +587,28 @@ class Database:
                 logger.error(f"Не удалось установить соединение с базой данных")
                 return None
             
-            cursor = self.conn.cursor(dictionary=True)
+            cursor = self.conn.cursor(dictionary=True, buffered=True)
             
-            logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
-            cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
-            
-            user = cursor.fetchone()
-            cursor.close()
-            
-            if user:
-                logger.info(f"Пользователь {telegram_id} найден в базе данных")
-                logger.debug(f"Полученные данные: {user}")
-            else:
-                logger.warning(f"Пользователь {telegram_id} не найден в базе данных")
-            
-            return user
+            try:
+                logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
+                cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
+                
+                user = cursor.fetchone()
+                
+                if user:
+                    logger.info(f"Пользователь {telegram_id} найден в базе данных")
+                    logger.debug(f"Полученные данные: {user}")
+                else:
+                    logger.warning(f"Пользователь {telegram_id} не найден в базе данных")
+                
+                return user
+                
+            except Exception as e:
+                logger.error(f"Ошибка при выполнении запроса: {str(e)}")
+                return None
+                
+            finally:
+                cursor.close()
             
         except Exception as e:
             logger.error(f"Ошибка при получении пользователя {telegram_id}: {str(e)}")
