@@ -63,7 +63,7 @@ class ReferralCode(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(BotUser, on_delete=models.CASCADE, db_column='user_id', related_name='referral_codes')
     code = models.CharField(max_length=255, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    registration_date = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     total_uses = models.IntegerField(default=0)
     last_used_at = models.DateTimeField(null=True, blank=True)

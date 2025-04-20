@@ -292,9 +292,9 @@ class UserStatisticsAdmin(RussianColumnNameAdmin):
 
 @admin.register(ReferralCode)
 class ReferralCodeAdmin(RussianColumnNameAdmin):
-    list_display = ('code', 'user', 'created_at', 'is_active', 'total_uses', 'last_used_at')
+    list_display = ('code', 'user', 'registration_date', 'is_active', 'total_uses', 'last_used_at')
     search_fields = ('code', 'user__username', 'user__telegram_id')
-    list_filter = ('is_active', 'created_at')
+    list_filter = ('is_active', 'registration_date')
     readonly_fields = ('code', 'total_uses', 'last_used_at')
     
     def get_column_names(self):
@@ -302,7 +302,7 @@ class ReferralCodeAdmin(RussianColumnNameAdmin):
         return {
             'code': 'Реферальный код',
             'user': 'Пользователь',
-            'created_at': 'Дата создания',
+            'registration_date': 'Дата регистрации',
             'is_active': 'Активен',
             'total_uses': 'Использований',
             'last_used_at': 'Последнее использование'
