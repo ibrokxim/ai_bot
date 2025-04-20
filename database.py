@@ -343,7 +343,6 @@ class Database:
                         is_bot BOOLEAN DEFAULT FALSE,
                         language_code VARCHAR(10),
                         contact VARCHAR(255),
-                        is_active BOOLEAN DEFAULT TRUE,
                         requests_left INT DEFAULT 5,
                         registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -458,7 +457,7 @@ class Database:
     def save_user(self, user_id: int, username: str = None, first_name: str = None, 
                   last_name: str = None, chat_id: Optional[int] = None, 
                   referral_code: Optional[str] = None, is_bot: bool = False,
-                  language_code: str = None, contact: str = None, is_active: bool = True) -> bool:
+                  language_code: str = None, contact: str = None) -> bool:
         """
         Сохраняет или обновляет информацию о пользователе
         
@@ -472,7 +471,6 @@ class Database:
             is_bot (bool): Является ли пользователь ботом
             language_code (str, optional): Код языка
             contact (str, optional): Контактные данные
-            is_active (bool): Активен ли пользователь
             
         Returns:
             bool: True если успешно, False если произошла ошибка
@@ -480,7 +478,7 @@ class Database:
         try:
             logger.info(f"Попытка сохранения пользователя: ID={user_id}, username={username}, "
                        f"contact={contact}, language_code={language_code}, is_bot={is_bot}, "
-                       f"is_active={is_active}, chat_id={chat_id}")
+                       f"chat_id={chat_id}")
             
             if not self.conn or not self.conn.is_connected():
                 logger.debug("Соединение с БД отсутствует, пытаемся создать новое")
@@ -507,13 +505,12 @@ class Database:
                             chat_id = %s,
                             is_bot = %s,
                             language_code = %s,
-                            contact = %s,
-                            is_active = %s
+                            contact = %s
                         WHERE telegram_id = %s
                     """
                     params = (
                         username, first_name, last_name, chat_id,
-                        is_bot, language_code, contact, is_active,
+                        is_bot, language_code, contact,
                         user_id
                     )
                     logger.info(f"Обновление пользователя {user_id}")
@@ -524,15 +521,15 @@ class Database:
                         INSERT INTO users (
                             telegram_id, username, first_name, last_name,
                             chat_id, is_bot, language_code, contact,
-                            is_active, requests_left, registration_date
+                            requests_left, registration_date
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
                         )
                     """
                     params = (
                         user_id, username, first_name, last_name,
                         chat_id, is_bot, language_code, contact,
-                        is_active, DEFAULT_REQUESTS
+                        DEFAULT_REQUESTS
                     )
                     logger.info(f"Создание нового пользователя {user_id}")
                     cursor.execute(sql, params)
@@ -1243,7 +1240,6 @@ class Database:
                         is_bot BOOLEAN DEFAULT FALSE,
                         language_code VARCHAR(10),
                         contact VARCHAR(255),
-                        is_active BOOLEAN DEFAULT TRUE,
                         requests_left INT DEFAULT 5,
                         registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
