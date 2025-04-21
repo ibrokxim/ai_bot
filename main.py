@@ -12,8 +12,8 @@ from aiogram.utils.keyboard import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 import asyncio
 
-from app.database.database import Database
-from app.config import DB_CONFIG
+from database import Database
+from config import DB_CONFIG
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -132,7 +132,6 @@ async def update_contact_cmd(message: Message, state: FSMContext):
     """Обработчик команды обновления контакта"""
     user_id = message.from_user.id
     
-    # Создаем клавиатуру с кнопкой отправки контакта
     markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     contact_button = KeyboardButton("📱 Отправить контакт", request_contact=True)
     markup.add(contact_button)
@@ -473,7 +472,6 @@ def process_referral_code(user_id, referral_code):
     return False
 
 async def send_referral_notification(referrer_id):
-    """Отправляет уведомление о новом реферале"""
     try:
         logger.info(f"Отправка уведомления о новом реферале пользователю {referrer_id}")
         await bot.send_message(
@@ -487,10 +485,9 @@ async def send_referral_notification(referrer_id):
         logger.exception("Полный стек ошибки:")
 
 async def send_welcome_message(user_id):
-    """Отправляет приветственное сообщение с инструкциями новому пользователю"""
     try:
         logger.info(f"Отправка приветственного сообщения пользователю {user_id}")
-        
+
         # Получаем реферальный код пользователя
         referral_code = db.get_user_referral_code(user_id)
         bot_username = (await bot.get_me()).username
@@ -521,7 +518,6 @@ async def send_welcome_message(user_id):
         logger.error(f"Ошибка при отправке приветственного сообщения: {str(e)}")
         logger.exception("Полный стек ошибки:")
 
-# Основная функция
 async def main():
     print("Запуск бота...")
     await dp.start_polling(bot)
