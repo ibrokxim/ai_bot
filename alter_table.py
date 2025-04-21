@@ -31,9 +31,12 @@ def create_referrals_table():
         if conn.is_connected():
             cursor = conn.cursor()
             
-            # Создаем таблицу referrals
+            # Удаляем старую таблицу если она существует
+            cursor.execute("DROP TABLE IF EXISTS referrals")
+            
+            # Создаем таблицу referrals с правильным внешним ключом
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS referrals (
+                CREATE TABLE referrals (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     user_id BIGINT NOT NULL,
                     referral_code VARCHAR(50) UNIQUE NOT NULL,
@@ -42,11 +45,11 @@ def create_referrals_table():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     last_used_at TIMESTAMP NULL,
                     FOREIGN KEY (user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
             
             conn.commit()
-            logger.info("Таблица referrals успешно создана или уже существует")
+            logger.info("Таблица referrals успешно создана")
             
     except Error as e:
         logger.error(f"Ошибка при создании таблицы referrals: {e}")

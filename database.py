@@ -351,24 +351,7 @@ class Database:
                   last_name: str = None, chat_id: Optional[int] = None, 
                   referral_code: Optional[str] = None, is_bot: bool = False,
                   language_code: str = None, contact: str = None, is_active: bool = True) -> bool:
-        """
-        Сохраняет или обновляет информацию о пользователе
-        
-        Args:
-            user_id (int): Telegram ID пользователя
-            username (str, optional): Имя пользователя
-            first_name (str, optional): Имя
-            last_name (str, optional): Фамилия
-            chat_id (int, optional): ID чата
-            referral_code (str, optional): Реферальный код
-            is_bot (bool): Является ли пользователь ботом
-            language_code (str, optional): Код языка
-            contact (str, optional): Контактные данные
-            is_active (bool): Активен ли пользователь
-            
-        Returns:
-            bool: True если успешно, False если произошла ошибка
-        """
+
         try:
             logger.info(f"Попытка сохранения пользователя: ID={user_id}, username={username}, "
                        f"contact={contact}, language_code={language_code}, is_bot={is_bot}, "
@@ -434,11 +417,13 @@ class Database:
                     referral_code = self.generate_referral_code(user_id)
                 
                 if referral_code:
-                    cursor.execute("""
-                        INSERT INTO referrals (user_id, referral_code, created_at)
-                        VALUES (%s, %s, NOW())
-                        ON DUPLICATE KEY UPDATE referral_code = VALUES(referral_code)
-                    """, (user_id, referral_code))
+                    try:
+                        # Сохраняем реферальный код
+                        if not self.create_referral(user_id, referral_code):
+                            logger.warning(f"Не удалось сохранить реферальный код {referral_code} для пользователя {user_id}")
+                    except Exception as e:
+                        logger.error(f"Ошибка при сохранении реферального кода: {str(e)}")
+                        # Продолжаем выполнение, так как основная информация пользователя уже сохранена
 
                 self.conn.commit()
                 
@@ -947,19 +932,19 @@ class Database:
             print(f"Ошибка при получении реферального кода пользователя: {e}")
             return None
 
-    def create_referral(self, user_id: int, referral_code: str) -> bool:
+    def create_referral(self, telegram_id: int, referral_code: str) -> bool:
         """
         Создает новую запись о реферальном коде пользователя в базе данных
         
         Args:
-            user_id (int): ID пользователя в системе
+            telegram_id (int): Telegram ID пользователя
             referral_code (str): Реферальный код
             
         Returns:
             bool: True если операция выполнена успешно, иначе False
         """
         try:
-            if not self.conn or self.conn._closed:
+            if not self.conn or not self.conn.open:
                 if not self.connect():
                     logger.error("Не удалось подключиться к базе данных")
                     return False
@@ -968,7 +953,7 @@ class Database:
                 # Проверяем, существует ли уже запись для данного пользователя
                 cursor.execute('''
                     SELECT id FROM referrals WHERE user_id = %s
-                ''', (user_id,))
+                ''', (telegram_id,))
                 
                 result = cursor.fetchone()
                 
@@ -978,20 +963,21 @@ class Database:
                         UPDATE referrals 
                         SET referral_code = %s, updated_at = NOW()
                         WHERE user_id = %s
-                    ''', (referral_code, user_id))
+                    ''', (referral_code, telegram_id))
                 else:
                     # Создаем новую запись
                     cursor.execute('''
                         INSERT INTO referrals (user_id, referral_code, created_at, updated_at)
                         VALUES (%s, %s, NOW(), NOW())
-                    ''', (user_id, referral_code))
+                    ''', (telegram_id, referral_code))
                 
-            self.conn.commit()
-            logger.info(f"Успешно сохранен реферальный код {referral_code} для пользователя {user_id}")
-            return True
+                self.conn.commit()
+                logger.info(f"Успешно сохранен реферальный код {referral_code} для пользователя {telegram_id}")
+                return True
             
         except Exception as e:
-            self.conn.rollback()
+            if self.conn:
+                self.conn.rollback()
             logger.error(f"Ошибка при сохранении реферального кода: {str(e)}")
             logger.exception("Подробная информация об ошибке:")
             return False
