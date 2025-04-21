@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import asyncio
 
 from database import Database
-from config import DB_CONFIG
+
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -39,10 +39,10 @@ if not BOT_TOKEN:
 
 # Получение конфигурации БД из переменных окружения
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'db': os.getenv('DB_NAME', 'chatbot_db'),
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'db': os.getenv('DB_NAME'),
     'charset': os.getenv('DB_CHARSET', 'utf8mb4')
 }
 

@@ -36,8 +36,9 @@ class Database:
     """
     Класс для работы с базой данных
     """
-    def __init__(self):
+    def __init__(self, config):
         """Инициализация класса Database"""
+        self.config = config
         self.conn = None
         self.connect()
 
@@ -72,7 +73,10 @@ class Database:
 
     def __del__(self):
         """Деструктор класса"""
-        self.close()
+        try:
+            self.close()
+        except Exception:
+            pass
 
     @staticmethod
     def execute_query(query, params=None, fetch_one=False, commit=False):
