@@ -347,34 +347,56 @@ class Database:
             logger.exception("Полный стек ошибки:")
             return None
 
-    def save_user(self, user_id: int, username: str = None, first_name: str = None, 
-                  last_name: str = None, chat_id: Optional[int] = None, 
-                  referral_code: Optional[str] = None, is_bot: bool = False,
-                  language_code: str = None, contact: str = None, is_active: bool = True) -> bool:
-
-        try:
-            logger.info(f"Попытка сохранения пользователя: ID={user_id}, username={username}, "
-                       f"contact={contact}, language_code={language_code}, is_bot={is_bot}, "
-                       f"chat_id={chat_id}, is_active={is_active}")
+    def save_user(
+        self,
+        user_id: int,
+        username: str = None,
+        first_name: str = None,
+        last_name: str = None,
+        chat_id: int = None,
+        referral_code: str = None,
+        is_bot: bool = False,
+        language_code: str = None,
+        contact: str = None,
+        is_active: bool = True
+    ) -> bool:
+        """
+        Сохраняет или обновляет информацию о пользователе в базе данных
+        
+        Args:
+            user_id (int): Telegram ID пользователя
+            username (str, optional): Имя пользователя
+            first_name (str, optional): Имя
+            last_name (str, optional): Фамилия
+            chat_id (int, optional): ID чата
+            referral_code (str, optional): Реферальный код
+            is_bot (bool, optional): Является ли бот
+            language_code (str, optional): Код языка
+            contact (str, optional): Контактная информация
+            is_active (bool, optional): Активен ли пользователь
             
+        Returns:
+            bool: True если операция выполнена успешно, иначе False
+        """
+        try:
             if not self.conn or not self.conn.open:
-                logger.debug("Соединение с БД отсутствует, пытаемся создать новое")
                 if not self.connect():
                     logger.error("Не удалось подключиться к базе данных")
                     return False
-            
-            cursor = self.conn.cursor()
-            
-            try:
+
+            with self.conn.cursor() as cursor:
                 # Проверяем, существует ли пользователь
-                cursor.execute("""
-                    SELECT telegram_id FROM users WHERE telegram_id = %s
-                """, (user_id,))
-                user_exists = cursor.fetchone()
+                cursor.execute('''
+                    SELECT telegram_id 
+                    FROM users 
+                    WHERE telegram_id = %s
+                ''', (user_id,))
+                
+                user_exists = cursor.fetchone() is not None
                 
                 if user_exists:
                     # Обновляем существующего пользователя
-                    sql = """
+                    cursor.execute('''
                         UPDATE users 
                         SET username = %s,
                             first_name = %s,
@@ -383,70 +405,65 @@ class Database:
                             is_bot = %s,
                             language_code = %s,
                             contact = %s,
-                            is_active = %s
+                            is_active = %s,
+                            updated_at = NOW()
                         WHERE telegram_id = %s
-                    """
-                    params = (
+                    ''', (
                         username, first_name, last_name, chat_id,
                         is_bot, language_code, contact, is_active,
                         user_id
-                    )
-                    logger.info(f"Обновление пользователя {user_id}")
-                    cursor.execute(sql, params)
+                    ))
                 else:
                     # Создаем нового пользователя
-                    sql = """
+                    cursor.execute('''
                         INSERT INTO users (
-                            telegram_id, username, first_name, last_name,
-                            chat_id, is_bot, language_code, contact,
-                            requests_left, is_active, registration_date
+                            telegram_id,
+                            username,
+                            first_name,
+                            last_name,
+                            chat_id,
+                            is_bot,
+                            language_code,
+                            contact,
+                            is_active,
+                            created_at,
+                            updated_at
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            NOW(), NOW()
                         )
-                    """
-                    params = (
+                    ''', (
                         user_id, username, first_name, last_name,
                         chat_id, is_bot, language_code, contact,
-                        DEFAULT_REQUESTS, is_active
-                    )
-                    logger.info(f"Создание нового пользователя {user_id}")
-                    cursor.execute(sql, params)
-
-                # Генерируем и сохраняем реферальный код, если его нет
-                if not referral_code:
-                    referral_code = self.generate_referral_code(user_id)
+                        is_active
+                    ))
                 
+                # Если предоставлен реферальный код, сохраняем его
                 if referral_code:
-                    try:
-                        # Сохраняем реферальный код
-                        if not self.create_referral(user_id, referral_code):
-                            logger.warning(f"Не удалось сохранить реферальный код {referral_code} для пользователя {user_id}")
-                    except Exception as e:
-                        logger.error(f"Ошибка при сохранении реферального кода: {str(e)}")
-                        # Продолжаем выполнение, так как основная информация пользователя уже сохранена
-
+                    if not self.create_referral(user_id, referral_code):
+                        logger.warning(f"Не удалось сохранить реферальный код для пользователя {user_id}")
+                
                 self.conn.commit()
                 
-                # Проверяем, что данные действительно сохранились
-                check_cursor = self.conn.cursor(pymysql.cursors.DictCursor)
-                check_cursor.execute("SELECT contact FROM users WHERE telegram_id = %s", (user_id,))
-                result = check_cursor.fetchone()
-                logger.info(f"Текущее значение контакта в БД: {result['contact'] if result else None}")
-                check_cursor.close()
+                # Проверяем, что пользователь действительно сохранен
+                cursor.execute('''
+                    SELECT telegram_id 
+                    FROM users 
+                    WHERE telegram_id = %s
+                ''', (user_id,))
                 
+                if not cursor.fetchone():
+                    logger.error("Пользователь не найден после сохранения")
+                    return False
+                
+                logger.info(f"Успешно сохранен пользователь {user_id}")
                 return True
-
-            except Exception as e:
-                self.conn.rollback()
-                logger.error(f"Ошибка при сохранении пользователя: {str(e)}")
-                return False
-            
-            finally:
-                cursor.close()
-
+                
         except Exception as e:
-            logger.error(f"Общая ошибка при сохранении пользователя: {str(e)}")
-            logger.exception("Полный стек ошибки:")
+            if self.conn:
+                self.conn.rollback()
+            logger.error(f"Ошибка при сохранении пользователя: {str(e)}")
+            logger.exception("Подробная информация об ошибке:")
             return False
 
     def get_user_by_referral_code(self, referral_code: str) -> Optional[int]:
@@ -961,17 +978,39 @@ class Database:
                     # Обновляем существующую запись
                     cursor.execute('''
                         UPDATE referrals 
-                        SET referral_code = %s, updated_at = NOW()
+                        SET referral_code = %s,
+                            is_active = TRUE,
+                            updated_at = NOW()
                         WHERE user_id = %s
                     ''', (referral_code, telegram_id))
                 else:
                     # Создаем новую запись
                     cursor.execute('''
-                        INSERT INTO referrals (user_id, referral_code, created_at, updated_at)
-                        VALUES (%s, %s, NOW(), NOW())
+                        INSERT INTO referrals (
+                            user_id, 
+                            referral_code, 
+                            is_active,
+                            created_at, 
+                            updated_at
+                        ) VALUES (
+                            %s, %s, TRUE, NOW(), NOW()
+                        )
                     ''', (telegram_id, referral_code))
                 
                 self.conn.commit()
+                
+                # Проверяем, что код действительно сохранился
+                cursor.execute('''
+                    SELECT referral_code 
+                    FROM referrals 
+                    WHERE user_id = %s
+                ''', (telegram_id,))
+                
+                saved_code = cursor.fetchone()
+                if not saved_code or saved_code[0] != referral_code:
+                    logger.error("Код в БД не соответствует запрошенному")
+                    return False
+                
                 logger.info(f"Успешно сохранен реферальный код {referral_code} для пользователя {telegram_id}")
                 return True
             

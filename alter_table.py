@@ -41,6 +41,7 @@ def create_referrals_table():
                     user_id BIGINT NOT NULL,
                     referral_code VARCHAR(50) UNIQUE NOT NULL,
                     total_uses INT DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     last_used_at TIMESTAMP NULL,
@@ -90,7 +91,35 @@ def alter_users_table():
             """)
             logger.info("Столбец registration_date обновлен")
             
+            # Добавляем значение по умолчанию для is_active
+            cursor.execute("""
+                ALTER TABLE users 
+                MODIFY COLUMN is_active BOOLEAN DEFAULT TRUE
+            """)
+            logger.info("Добавлено значение по умолчанию для is_active")
+            
+            # Создаем таблицу users если она не существует
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INT AUTO_INCREMENT PRIMARY KEY,
+                    telegram_id BIGINT UNIQUE NOT NULL,
+                    username VARCHAR(255),
+                    first_name VARCHAR(255),
+                    last_name VARCHAR(255),
+                    chat_id BIGINT,
+                    is_bot BOOLEAN DEFAULT FALSE,
+                    language_code VARCHAR(10),
+                    contact VARCHAR(255),
+                    requests_left INT DEFAULT 10,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+            
             conn.commit()
+            logger.info("Структура таблицы users успешно обновлена")
             
     except Error as e:
         logger.error(f"Ошибка при изменении таблицы users: {e}")
