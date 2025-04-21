@@ -371,9 +371,9 @@ class Database:
                         INSERT INTO users (
                             telegram_id, username, first_name, last_name,
                             chat_id, is_bot, language_code, contact,
-                            requests_left, is_active
+                            requests_left, is_active, registration_date
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
                         )
                     """
                     params = (
