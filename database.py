@@ -422,37 +422,37 @@ class Database:
         """
         try:
             logger.debug(f"Получение данных пользователя {telegram_id} из базы данных")
-            
+
             if not self.conn or not self.conn.is_connected():
-                logger.debug(f"Соединение с БД отсутствует или закрыто, открываем новое соединение")
+                logger.debug("Соединение с БД отсутствует или закрыто, открываем новое соединение")
                 self.connect()
-            
+
             if not self.conn or not self.conn.is_connected():
-                logger.error(f"Не удалось установить соединение с базой данных")
+                logger.error("Не удалось установить соединение с базой данных")
                 return None
-            
+
             cursor = self.conn.cursor(dictionary=True, buffered=True)
-            
+
             try:
                 logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
                 cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
-            
-            user = cursor.fetchone()
+                user = cursor.fetchone()
+
                 if user:
                     logger.info(f"Пользователь {telegram_id} найден в базе данных")
                     logger.debug(f"Полученные данные: {user}")
                 else:
                     logger.warning(f"Пользователь {telegram_id} не найден в базе данных")
 
-            return user
-                
+                return user
+
             except Exception as e:
                 logger.error(f"Ошибка при выполнении запроса: {str(e)}")
                 return None
-                
+
             finally:
                 cursor.close()
-            
+
         except Exception as e:
             logger.error(f"Ошибка при получении пользователя {telegram_id}: {str(e)}")
             logger.exception("Полный стек ошибки:")
@@ -491,11 +491,11 @@ class Database:
             # Если не нашли, пробуем поискать в таблице users (если там хранятся коды)
             if not found_user_id:
                 try:
-            cursor.execute("""
-                SELECT telegram_id FROM users WHERE referral_code = %s
-            """, (referral_code,))
+                    cursor.execute("""
+                         SELECT telegram_id FROM users WHERE referral_code = %s
+                    """, (referral_code,))
             
-            result = cursor.fetchone()
+                    result = cursor.fetchone()
                     
                     if result:
                         found_user_id = result['telegram_id']
@@ -606,7 +606,7 @@ class Database:
                                 INSERT IGNORE INTO users (telegram_id, requests_left)
                                 VALUES (%s, 10)
                             """, (telegram_id,))
-            self.conn.commit()
+                            self.conn.commit()
                             
                             # Пробуем снова вставить код
                             cursor.execute("""
@@ -629,14 +629,14 @@ class Database:
             
             if saved_code and saved_code[0] == referral_code:
                 logger.info(f"Реферальный код {referral_code} успешно сохранен для пользователя {telegram_id}")
-            return True
+                return True
             else:
                 logger.error(f"Ошибка при сохранении реферального кода: код в БД не соответствует запрошенному")
                 return False
             
         except Exception as e:
             if self.conn:
-            self.conn.rollback()
+                self.conn.rollback()
             logger.error(f"Ошибка при обновлении реферального кода для {telegram_id}: {str(e)}")
             return False
 
@@ -799,7 +799,7 @@ class Database:
                             cursor.execute(sql, (referrer_id, referred_user_id, referral_code, bonus_requests, 'registered'))
                             conn.commit()
                             logger.info(f"Реферальная история сохранена с полными данными: {referrer_id} пригласил {referred_user_id}, код: {referral_code}")
-            return True
+                            return True
                         except Exception as e:
                             conn.rollback()
                             logger.warning(f"Не удалось сохранить полную запись: {e}. Пробуем базовый вариант.")
@@ -834,51 +834,51 @@ class Database:
         """
         try:
             logger.info(f"Попытка увеличить количество запросов на {amount} для пользователя {telegram_id}")
-            
+
             if not self.conn or not self.conn.is_connected():
                 self.connect()
-            
+
             cursor = self.conn.cursor()
-            
+
             # Проверка существования пользователя
             cursor.execute("SELECT telegram_id, requests_left FROM users WHERE telegram_id = %s", (telegram_id,))
             user_data = cursor.fetchone()
-            
+
             if not user_data:
                 logger.error(f"Пользователь {telegram_id} не найден при попытке увеличить запросы")
                 cursor.close()
                 return False
-                
+
             current_requests = user_data[1] if len(user_data) > 1 else 0
             logger.info(f"Текущее количество запросов пользователя {telegram_id}: {current_requests}")
-            
+
             # Увеличиваем количество запросов
             cursor.execute("""
                 UPDATE users 
                 SET requests_left = requests_left + %s 
                 WHERE telegram_id = %s
             """, (amount, telegram_id))
-            
+
             self.conn.commit()
             affected_rows = cursor.rowcount
-            
+
             # Проверяем, изменилось ли количество запросов
             cursor.execute("SELECT requests_left FROM users WHERE telegram_id = %s", (telegram_id,))
             new_data = cursor.fetchone()
             new_requests = new_data[0] if new_data else 0
-            
+
             cursor.close()
-            
+
             if affected_rows > 0 and new_requests > current_requests:
                 logger.info(f"Успешно добавлено {amount} запросов пользователю {telegram_id}. Новое значение: {new_requests}")
-            return True
+                return True
             else:
                 logger.error(f"Не удалось добавить запросы пользователю {telegram_id}. Запросов до: {current_requests}, после: {new_requests}")
                 return False
-            
+
         except Exception as e:
             if self.conn:
-            self.conn.rollback()
+                self.conn.rollback()
             logger.error(f"Ошибка при увеличении запросов для {telegram_id}: {e}")
             return False
 
