@@ -302,6 +302,51 @@ class Database:
         
         return True
 
+    def get_user(self, telegram_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получение информации о пользователе по telegram_id
+        
+        :param telegram_id: ID пользователя в Telegram
+        :return: Словарь с данными пользователя или None, если пользователь не найден
+        """
+        try:
+            logger.debug(f"Получение данных пользователя {telegram_id} из базы данных")
+
+            if not self.conn or not self.conn.open:
+                logger.debug("Соединение с БД отсутствует или закрыто, открываем новое соединение")
+                self.connect()
+            
+            if not self.conn or not self.conn.open:
+                logger.error("Не удалось установить соединение с базой данных")
+                return None
+
+            cursor = self.conn.cursor(pymysql.cursors.DictCursor)
+
+            try:
+                logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
+                cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
+                user = cursor.fetchone()
+
+                if user:
+                    logger.info(f"Пользователь {telegram_id} найден в базе данных")
+                    logger.debug(f"Полученные данные: {user}")
+                else:
+                    logger.warning(f"Пользователь {telegram_id} не найден в базе данных")
+
+                return user
+
+            except Exception as e:
+                logger.error(f"Ошибка при выполнении запроса: {str(e)}")
+                return None
+
+            finally:
+                cursor.close()
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении пользователя {telegram_id}: {str(e)}")
+            logger.exception("Полный стек ошибки:")
+            return None
+
     def save_user(self, user_id: int, username: str = None, first_name: str = None, 
                   last_name: str = None, chat_id: Optional[int] = None, 
                   referral_code: Optional[str] = None, is_bot: bool = False,
@@ -398,9 +443,11 @@ class Database:
                 self.conn.commit()
                 
                 # Проверяем, что данные действительно сохранились
-                cursor.execute("SELECT contact FROM users WHERE telegram_id = %s", (user_id,))
-                result = cursor.fetchone()
+                check_cursor = self.conn.cursor(pymysql.cursors.DictCursor)
+                check_cursor.execute("SELECT contact FROM users WHERE telegram_id = %s", (user_id,))
+                result = check_cursor.fetchone()
                 logger.info(f"Текущее значение контакта в БД: {result['contact'] if result else None}")
+                check_cursor.close()
                 
                 return True
 
@@ -416,51 +463,6 @@ class Database:
             logger.error(f"Общая ошибка при сохранении пользователя: {str(e)}")
             logger.exception("Полный стек ошибки:")
             return False
-
-    def get_user(self, telegram_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Получение информации о пользователе по telegram_id
-        
-        :param telegram_id: ID пользователя в Telegram
-        :return: Словарь с данными пользователя или None, если пользователь не найден
-        """
-        try:
-            logger.debug(f"Получение данных пользователя {telegram_id} из базы данных")
-
-            if not self.conn or not self.conn.open:
-                logger.debug("Соединение с БД отсутствует или закрыто, открываем новое соединение")
-                self.connect()
-            
-            if not self.conn or not self.conn.open:
-                logger.error("Не удалось установить соединение с базой данных")
-                return None
-
-            cursor = self.conn.cursor(dictionary=True, buffered=True)
-
-            try:
-                logger.debug(f"Выполняем запрос к БД для получения данных пользователя {telegram_id}")
-                cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
-                user = cursor.fetchone()
-
-                if user:
-                    logger.info(f"Пользователь {telegram_id} найден в базе данных")
-                    logger.debug(f"Полученные данные: {user}")
-                else:
-                    logger.warning(f"Пользователь {telegram_id} не найден в базе данных")
-
-                return user
-
-            except Exception as e:
-                logger.error(f"Ошибка при выполнении запроса: {str(e)}")
-                return None
-
-            finally:
-                cursor.close()
-
-        except Exception as e:
-            logger.error(f"Ошибка при получении пользователя {telegram_id}: {str(e)}")
-            logger.exception("Полный стек ошибки:")
-            return None
 
     def get_user_by_referral_code(self, referral_code: str) -> Optional[int]:
         """
