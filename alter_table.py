@@ -2,6 +2,14 @@ import mysql.connector
 from mysql.connector import Error
 import os
 from dotenv import load_dotenv
+import logging
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -16,16 +24,46 @@ config = {
     'charset': os.getenv('DB_CHARSET', 'utf8mb4')
 }
 
-def alter_users_table():
-    """Добавляет столбец requests_left в таблицу users"""
+def create_referrals_table():
+    """Создает таблицу referrals если она не существует"""
     try:
-        # Установка соединения
+        conn = mysql.connector.connect(**config)
+        if conn.is_connected():
+            cursor = conn.cursor()
+            
+            # Создаем таблицу referrals
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    referral_code VARCHAR(50) UNIQUE NOT NULL,
+                    total_uses INT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+                )
+            """)
+            
+            conn.commit()
+            logger.info("Таблица referrals успешно создана или уже существует")
+            
+    except Error as e:
+        logger.error(f"Ошибка при создании таблицы referrals: {e}")
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+def alter_users_table():
+    """Обновляет структуру таблицы users"""
+    try:
         conn = mysql.connector.connect(**config)
         
         if conn.is_connected():
             cursor = conn.cursor()
             
-            # Проверяем, существует ли уже столбец requests_left
+            # Проверяем и добавляем столбец requests_left
             cursor.execute("""
                 SELECT COUNT(*) 
                 FROM information_schema.COLUMNS 
@@ -36,18 +74,23 @@ def alter_users_table():
             """, (config['database'],))
             
             if cursor.fetchone()[0] == 0:
-                # Столбец не существует, добавляем его
                 cursor.execute("""
                     ALTER TABLE users 
                     ADD COLUMN requests_left INT DEFAULT 10
                 """)
-                print("Столбец requests_left успешно добавлен в таблицу users")
-            else:
-                print("Столбец requests_left уже существует в таблице users")
+                logger.info("Столбец requests_left успешно добавлен в таблицу users")
+            
+            # Обновляем registration_date
+            cursor.execute("""
+                ALTER TABLE users 
+                MODIFY COLUMN registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            """)
+            logger.info("Столбец registration_date обновлен")
             
             conn.commit()
+            
     except Error as e:
-        print(f"Ошибка при изменении таблицы: {e}")
+        logger.error(f"Ошибка при изменении таблицы users: {e}")
     finally:
         if conn.is_connected():
             cursor.close()
@@ -62,5 +105,6 @@ if __name__ == "__main__":
         os.environ['DB_USER'] = sys.argv[2]
         os.environ['DB_PASSWORD'] = sys.argv[3]
         os.environ['DB_NAME'] = sys.argv[4]
-        
-    alter_users_table() 
+    
+    alter_users_table()
+    create_referrals_table() 

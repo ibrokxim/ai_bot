@@ -427,11 +427,11 @@ class Database:
         try:
             logger.debug(f"Получение данных пользователя {telegram_id} из базы данных")
 
-            if not self.conn or not self.conn.is_connected():
+            if not self.conn or not self.conn.open:
                 logger.debug("Соединение с БД отсутствует или закрыто, открываем новое соединение")
                 self.connect()
-
-            if not self.conn or not self.conn.is_connected():
+            
+            if not self.conn or not self.conn.open:
                 logger.error("Не удалось установить соединение с базой данных")
                 return None
 
@@ -472,7 +472,7 @@ class Database:
         try:
             logger.info(f"Ищем пользователя по реферальному коду: {referral_code}")
             
-            if not self.conn or not self.conn.is_connected():
+            if not self.conn or not self.conn.open:
                 self.connect()
             
             cursor = self.conn.cursor(dictionary=True)
@@ -543,7 +543,7 @@ class Database:
         try:
             logger.info(f"Обновление реферального кода для пользователя {telegram_id}: {referral_code}")
             
-            if not self.conn or not self.conn.is_connected():
+            if not self.conn or not self.conn.open:
                 logger.debug(f"Соединение с БД отсутствует или закрыто, пытаемся переподключиться")
                 self.connect()
             
@@ -839,7 +839,7 @@ class Database:
         try:
             logger.info(f"Попытка увеличить количество запросов на {amount} для пользователя {telegram_id}")
 
-            if not self.conn or not self.conn.is_connected():
+            if not self.conn or not self.conn.open:
                 self.connect()
 
             cursor = self.conn.cursor()
@@ -895,7 +895,7 @@ class Database:
         :return: True, если обновление успешно, иначе False
         """
         try:
-            if not self.conn or not self.conn.is_connected():
+            if not self.conn or not self.conn.open:
                 self.connect()
             
             cursor = self.conn.cursor()
