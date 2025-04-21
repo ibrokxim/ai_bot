@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 # Create your models here.
 
@@ -12,9 +13,9 @@ class BotUser(models.Model):
     language_code = models.CharField(max_length=10, null=True, blank=True)
     chat_id = models.BigIntegerField()
     contact = models.CharField(max_length=255, null=True, blank=True)
-    is_active = models.BooleanField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
     requests_left = models.IntegerField(null=True, blank=True)
-    registration_date = models.DateTimeField()
+    registration_date = models.DateTimeField(default=timezone.now)
 
     @property
     def referral_code(self):

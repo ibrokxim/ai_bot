@@ -12,7 +12,8 @@ from aiogram.utils.keyboard import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 import asyncio
 
-from database import Database
+from app.database.database import Database
+from app.config import DB_CONFIG
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -165,17 +166,13 @@ async def process_contact(message: Message, state: FSMContext):
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
             chat_id=message.chat.id,
-            contact=contact.phone_number,
+            contact=contact.phone_number,  # Передаем только номер телефона
             is_bot=message.from_user.is_bot,
-            language_code=message.from_user.language_code
+            language_code=message.from_user.language_code,
+            referral_code=referral_code  # Добавляем реферальный код
         )
         
         if success:
-            # Обрабатываем реферальный код, если есть
-            if referral_code:
-                logger.info(f"Обрабатываем реферальный код {referral_code} для пользователя {user_id}")
-                process_referral_code(user_id, referral_code)
-            
             # Устанавливаем состояние registered
             await state.set_state(UserState.registered)
             

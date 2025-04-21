@@ -9,4 +9,8 @@ DATABASE_NAME = 'users.db'
 
 # Настройки API
 API_HOST = "0.0.0.0"
-API_PORT = 8000 
+API_PORT = 8000
+
+# Настройки реферальной системы
+DEFAULT_REQUESTS = 10  # Начальное количество запросов для нового пользователя
+REFERRAL_BONUS_REQUESTS = 5  # Количество бонусных запросов за реферала 
