@@ -946,6 +946,18 @@ class Database:
                     return False
                 
             with self.conn.cursor() as cursor:
+                # Сначала получаем user_id по telegram_id
+                cursor.execute('''
+                    SELECT user_id FROM users WHERE telegram_id = %s
+                ''', (telegram_id,))
+                
+                user_result = cursor.fetchone()
+                if not user_result:
+                    logger.error(f"Пользователь с telegram_id {telegram_id} не найден")
+                    return False
+                
+                user_id = user_result['user_id']
+                
                 # Проверяем, существует ли уже запись для данного пользователя
                 cursor.execute('''
                     SELECT id FROM referrals WHERE user_id = %s
@@ -986,7 +998,7 @@ class Database:
                 ''', (telegram_id,))
                 
                 saved_code = cursor.fetchone()
-                if not saved_code or saved_code[0] != referral_code:
+                if not saved_code or saved_code['referral_code'] != referral_code:
                     logger.error("Код в БД не соответствует запрошенному")
                     return False
                 
@@ -1086,9 +1098,57 @@ class Database:
                         language_code VARCHAR(10),
                         contact VARCHAR(255),
                         requests_left INT DEFAULT 5,
+                        is_active TINYINT(1) DEFAULT 1,
                         registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
+
+                # Создание таблицы рефералов
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS referrals (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        referral_code VARCHAR(255) UNIQUE NOT NULL,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        total_uses INT DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        last_used_at TIMESTAMP NULL,
+                        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+
+                # Создание таблицы истории рефералов
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS referral_history (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        referrer_id INT NOT NULL,
+                        referred_id INT NOT NULL,
+                        referral_code VARCHAR(255) NOT NULL,
+                        bonus_requests_added INT DEFAULT 0,
+                        conversion_status ENUM('registered', 'used_bot') DEFAULT 'registered',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        converted_at TIMESTAMP NULL,
+                        FOREIGN KEY (referrer_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                        FOREIGN KEY (referred_id) REFERENCES users(user_id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+
+                # Проверяем, существует ли колонка is_active в таблице users
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM information_schema.columns 
+                    WHERE table_name = 'users'
+                    AND column_name = 'is_active'
+                    AND table_schema = DATABASE()
+                """)
+                
+                if cursor.fetchone()['COUNT(*)'] == 0:
+                    # Если колонки нет, добавляем её
+                    cursor.execute("""
+                        ALTER TABLE users
+                        ADD COLUMN is_active BOOLEAN DEFAULT TRUE
+                    """)
                 
                 self.conn.commit()
                 logging.info("Таблицы успешно созданы")
