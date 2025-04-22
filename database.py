@@ -16,7 +16,7 @@ load_dotenv()
 logger = logging.getLogger('bot.database')
 
 # Константы
-DEFAULT_REQUESTS = 10  # Начальное количество запросов для нового пользователя
+DEFAULT_REQUESTS = 3  # Начальное количество запросов для нового пользователя
 
 def get_db_connection():
     """
