@@ -3,13 +3,13 @@ import logging
 import os
 import uuid
 
-from aiogram import Bot, Dispatcher, F, types
+from aiogram import F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from dotenv import load_dotenv
 
 from database_bot import BotDatabase
@@ -44,7 +44,7 @@ class UserState(StatesGroup):
 
 
 @dp.message(CommandStart())
-async def start_handler(message: Message):
+async def start_handler(message: Message, state: FSMContext):
     user = message.from_user
 
     # Сохраняем пользователя в базе данных
@@ -83,11 +83,11 @@ async def start_handler(message: Message):
         f"У вас есть {user_data['requests_left']} запросов.\n"
     )
 
-    # Создаем клавиатуру
-    keyboard = []
+    # Создаем инлайн клавиатуру
+    inline_keyboard = []
 
     if MINI_APP_URL:
-        keyboard.append([
+        inline_keyboard.append([
             InlineKeyboardButton(
                 text="🌐 Открыть мини-приложение",
                 web_app=WebAppInfo(url=MINI_APP_URL)
@@ -99,7 +99,7 @@ async def start_handler(message: Message):
     if ref_data:
         bot_info = await bot.get_me()
         ref_link = f"https://t.me/{bot_info.username}?start={ref_data['referral_code']}"
-        keyboard.append([
+        inline_keyboard.append([
             InlineKeyboardButton(
                 text="🔗 Скопировать реферальную ссылку",
                 callback_data=f"copy_ref:{ref_data['referral_code']}"
@@ -112,10 +112,17 @@ async def start_handler(message: Message):
             f"Приглашайте друзей и получайте {REFERRAL_BONUS_REQUESTS} бонусных запросов за каждого!"
         )
 
-    markup = InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    button = types.KeyboardButton("📱 Поделиться контактом", request_contact=True)
-    keyboard.add(button)
+    # Создаем инлайн разметку, если есть кнопки
+    inline_markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard) if inline_keyboard else None
+
+    # Создаем клавиатуру для запроса контакта
+    contact_keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
 
     # Добавляем текст про контакт
     welcome_text += (
@@ -123,8 +130,18 @@ async def start_handler(message: Message):
         "Нажмите на кнопку ниже, чтобы подтвердить контакт.\n\n"
         "🔒 Ваш номер будет использован только для связи и не будет передан третьим лицам."
     )
-    await message.answer(welcome_text, reply_markup=markup)
-    await UserState.waiting_for_contact.set()
+
+    # Отправляем сначала сообщение с инлайн кнопками (если есть)
+    if inline_markup:
+        await message.answer(welcome_text, reply_markup=inline_markup)
+    else:
+        await message.answer(welcome_text)
+
+    # Отправляем клавиатуру для запроса контакта отдельным сообщением
+    await message.answer("Нажмите на кнопку ниже:", reply_markup=contact_keyboard)
+
+    # Устанавливаем состояние ожидания контакта
+    await state.set_state(UserState.waiting_for_contact)
 
 
 @dp.callback_query(F.data.startswith("copy_ref:"))
@@ -141,37 +158,6 @@ async def handle_copy_ref(callback: CallbackQuery):
     await callback.answer()
 
 
-@dp.message(F.command("start"))
-async def cmd_start(message: Message):
-    # Сохраняем базовую информацию о пользователе
-    db.save_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name,
-        chat_id=message.chat.id,
-        is_bot=message.from_user.is_bot,
-        language_code=message.from_user.language_code
-    )
-
-    # Создаем клавиатуру с кнопкой запроса контакта
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button = types.KeyboardButton("📱 Поделиться контактом", request_contact=True)
-    keyboard.add(button)
-
-    # Отправляем приветственное сообщение
-    await message.answer(
-        f"👋 Здравствуйте, {message.from_user.first_name}!\n\n"
-        "Для начала работы с ботом, пожалуйста, поделитесь своим контактным номером, "
-        "нажав на кнопку ниже.\n\n"
-        "🔒 Ваш номер будет использоваться только для связи с вами и не будет передан третьим лицам.",
-        reply_markup=keyboard
-    )
-
-    # Устанавливаем состояние ожидания контакта
-    await UserState.waiting_for_contact.set()
-
-
 @dp.message(F.content_type == "contact", UserState.waiting_for_contact)
 async def process_contact(message: Message, state: FSMContext):
     if message.contact is not None:
@@ -184,21 +170,25 @@ async def process_contact(message: Message, state: FSMContext):
         requests_left = user.get('requests_left', 0) if user else 0
 
         # Создаем обычную клавиатуру для дальнейшего взаимодействия
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        keyboard.add(types.KeyboardButton("🔍 Начать поиск"))
-        keyboard.add(types.KeyboardButton("💫 Мои запросы"))
-        keyboard.add(types.KeyboardButton("ℹ️ Помощь"))
+        main_keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🔍 Начать поиск")],
+                [KeyboardButton(text="💫 Мои запросы")],
+                [KeyboardButton(text="ℹ️ Помощь")]
+            ],
+            resize_keyboard=True
+        )
 
         # Отправляем сообщение об успешной регистрации
         await message.answer(
             f"✅ Спасибо! Ваш контакт успешно сохранен.\n\n"
             f"🎉 У вас есть {requests_left} доступных запросов.\n\n"
             f"Выберите действие из меню ниже:",
-            reply_markup=keyboard
+            reply_markup=main_keyboard
         )
 
         # Сбрасываем состояние
-        await state.finish()
+        await state.clear()
     else:
         await message.answer(
             "❌ Произошла ошибка при получении контакта. Пожалуйста, попробуйте еще раз, "
@@ -209,13 +199,16 @@ async def process_contact(message: Message, state: FSMContext):
 @dp.message(UserState.waiting_for_contact)
 async def process_invalid_contact(message: Message):
     """Обработка любых сообщений в состоянии ожидания контакта"""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button = types.KeyboardButton("📱 Поделиться контактом", request_contact=True)
-    keyboard.add(button)
+    contact_keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]
+        ],
+        resize_keyboard=True
+    )
 
     await message.answer(
         "⚠️ Пожалуйста, поделитесь своим контактом, используя специальную кнопку ниже.",
-        reply_markup=keyboard
+        reply_markup=contact_keyboard
     )
 
 
