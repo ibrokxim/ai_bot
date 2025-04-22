@@ -11,8 +11,11 @@ from aiogram.types import Message, ReplyKeyboardRemove, ReplyKeyboardMarkup, Key
 from aiogram.utils.keyboard import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 import asyncio
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from database import Database
+from config import TELEGRAM_TOKEN, DB_CONFIG
 
 
 # Загрузка переменных окружения
@@ -89,7 +92,7 @@ async def start_cmd(message: Message, state: FSMContext):
     if user_data and user_data.get('contact'):
         # Пользователь уже отправил контакт, переводим в состояние registered
         await state.set_state(UserState.registered)
-        
+                
         # Показываем приветственное сообщение
         await show_welcome_message(message, user_id)
     else:
@@ -132,30 +135,30 @@ async def update_contact_cmd(message: Message, state: FSMContext):
     """Обработчик команды обновления контакта"""
     user_id = message.from_user.id
     
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    contact_button = KeyboardButton("📱 Отправить контакт", request_contact=True)
-    markup.add(contact_button)
-    
-    await message.reply(
+        markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        contact_button = KeyboardButton("📱 Отправить контакт", request_contact=True)
+        markup.add(contact_button)
+        
+        await message.reply(
         "Пожалуйста, поделитесь вашим контактом для обновления. "
-        "Нажмите кнопку ниже:",
-        reply_markup=markup
-    )
-    
-    await UserState.waiting_for_contact.set()
+            "Нажмите кнопку ниже:",
+            reply_markup=markup
+        )
+        
+        await UserState.waiting_for_contact.set()
 
 # Улучшаем обработчик получения контакта
 @dp.message(F.contact, UserState.waiting_for_contact)
 async def process_contact(message: Message, state: FSMContext):
     """Обрабатывает полученный контакт пользователя"""
     try:
-        user_id = message.from_user.id
-        contact = message.contact
+    user_id = message.from_user.id
+    contact = message.contact
         logger.info(f"Получен контакт от пользователя {user_id}: {contact.phone_number}")
-        
+    
         # Получаем данные из состояния FSM
-        state_data = await state.get_data()
-        referral_code = state_data.get('referral_code')
+    state_data = await state.get_data()
+    referral_code = state_data.get('referral_code')
         logger.debug(f"Найден реферальный код {referral_code} для пользователя {user_id}")
         
         # Сохраняем пользователя с контактом
@@ -181,9 +184,9 @@ async def process_contact(message: Message, state: FSMContext):
                 "Теперь вы можете использовать бота в полном объеме.",
                 reply_markup=types.ReplyKeyboardRemove()
             )
-            
-            # Показываем приветственное сообщение
-            await show_welcome_message(message, user_id)
+    
+    # Показываем приветственное сообщение
+    await show_welcome_message(message, user_id)
         else:
             await message.reply(
                 "❌ Произошла ошибка при сохранении контакта.\n"
@@ -205,12 +208,12 @@ async def show_welcome_message(message: Message, user_id: int):
     try:
         logger.debug(f"Начало выполнения функции show_welcome_message для пользователя {user_id}")
         
-        # Получаем данные пользователя
-        user_data = db.get_user(user_id)
+    # Получаем данные пользователя
+    user_data = db.get_user(user_id)
         
         logger.debug(f"Получены данные пользователя: {user_data}")
-        
-        if not user_data:
+    
+    if not user_data:
             logger.error(f"Пользователь {user_id} не найден в базе данных")
             await message.reply(
                 "❌ Произошла ошибка при получении данных. Пожалуйста, попробуйте позже.",
@@ -226,7 +229,7 @@ async def show_welcome_message(message: Message, user_id: int):
         logger.debug(f"Получен реферальный код: {referral_code}")
         
         # Проверяем, получен ли код в итоге
-        if not referral_code:
+    if not referral_code:
             logger.error(f"Не удалось получить или создать реферальный код для пользователя {user_id}")
             referral_link = "Не удалось сгенерировать ссылку"
         else:
@@ -236,28 +239,28 @@ async def show_welcome_message(message: Message, user_id: int):
             bot_username = bot_info.username
             logger.debug(f"Имя пользователя бота: {bot_username}")
             
-            referral_link = f"https://t.me/{bot_username}?start={referral_code}"
+    referral_link = f"https://t.me/{bot_username}?start={referral_code}"
             logger.info(f"Реферальная ссылка для пользователя {user_id}: {referral_link}")
-        
-        # Создаем клавиатуру
+    
+    # Создаем клавиатуру
         logger.debug(f"Создаем клавиатуру для пользователя {user_id}")
         markup = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💬 Начать чат", callback_data="start_chat")],
             [InlineKeyboardButton(text="👥 Пригласить друга", callback_data="invite_friend")],
             [InlineKeyboardButton(text="📊 Мой профиль", callback_data="profile")]
         ])
-        
-        # Отправляем приветственное сообщение
+    
+    # Отправляем приветственное сообщение
         logger.debug(f"Отправляем приветственное сообщение пользователю {user_id}")
-        await message.reply(
-            f"👋 Добро пожаловать в бот!\n\n"
-            f"У вас осталось {user_data.get('requests_left', 0)} запросов.\n\n"
+    await message.reply(
+        f"👋 Добро пожаловать в бот!\n\n"
+        f"У вас осталось {user_data.get('requests_left', 0)} запросов.\n\n"
             f"🔗 Ваша реферальная ссылка:\n{referral_link}\n\n"
             f"Приглашайте друзей и получайте дополнительные запросы!\n"
             f"За каждого приглашенного друга вы получите {REFERRAL_BONUS_REQUESTS} бонусных запросов.\n\n"
-            f"Выберите действие:",
-            reply_markup=markup
-        )
+        f"Выберите действие:",
+        reply_markup=markup
+    )
         logger.info(f"Приветственное сообщение отправлено пользователю {user_id}")
     
     except Exception as e:
@@ -518,9 +521,54 @@ async def send_welcome_message(user_id):
         logger.error(f"Ошибка при отправке приветственного сообщения: {str(e)}")
         logger.exception("Полный стек ошибки:")
 
-async def main():
-    print("Запуск бота...")
-    await dp.start_polling(bot)
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработчик команды /start
+    Сохраняет информацию о пользователе в базу данных
+    """
+    try:
+        user = update.effective_user
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        
+        # Сохраняем информацию о пользователе
+        saved = db.save_user(
+            telegram_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            is_bot=user.is_bot,
+            language_code=user.language_code,
+            chat_id=chat_id,
+            is_active=True
+        )
+        
+        if saved:
+            logger.info(f"Пользователь {user.id} успешно сохранен в базе данных")
+            await update.message.reply_text(
+                f"Привет, {user.first_name}! Добро пожаловать в бота."
+            )
+        else:
+            logger.error(f"Не удалось сохранить пользователя {user.id}")
+            await update.message.reply_text(
+                "Извините, произошла ошибка при регистрации. Пожалуйста, попробуйте позже."
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка в команде /start: {str(e)}")
+        await update.message.reply_text(
+            "Произошла ошибка. Пожалуйста, попробуйте позже."
+        )
+
+def main():
+    """Запуск бота"""
+    # Создаем приложение
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start_command))
+
+    # Запускаем бота
+    application.run_polling()
 
 if __name__ == '__main__':
     # Проверяем наличие всех необходимых переменных окружения
@@ -534,4 +582,4 @@ if __name__ == '__main__':
     
     print("Бот запущен!")
     # Запускаем бота
-    asyncio.run(main())
+    main()
