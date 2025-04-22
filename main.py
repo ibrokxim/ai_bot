@@ -141,7 +141,7 @@ async def handle_copy_ref(callback: CallbackQuery):
     await callback.answer()
 
 
-@dp.message_handler(commands=['start'])
+@dp.message(F.command("start"))
 async def cmd_start(message: Message):
     # Сохраняем базовую информацию о пользователе
     db.save_user(
@@ -172,7 +172,7 @@ async def cmd_start(message: Message):
     await UserState.waiting_for_contact.set()
 
 
-@dp.message_handler(content_types=['contact'], state=UserState.waiting_for_contact)
+@dp.message(F.content_type == "contact", UserState.waiting_for_contact)
 async def process_contact(message: Message, state: FSMContext):
     if message.contact is not None:
         # Сохраняем контакт в базу данных
@@ -206,7 +206,7 @@ async def process_contact(message: Message, state: FSMContext):
         )
 
 
-@dp.message_handler(state=UserState.waiting_for_contact)
+@dp.message(UserState.waiting_for_contact)
 async def process_invalid_contact(message: Message):
     """Обработка любых сообщений в состоянии ожидания контакта"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
