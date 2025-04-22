@@ -47,7 +47,12 @@ class UserState(StatesGroup):
 async def start_handler(message: Message, state: FSMContext):
     user = message.from_user
 
-    # Сохраняем пользователя в базе данных
+    # Проверяем, есть ли пользователь в базе и есть ли у него контакт
+    user_data = db.get_user(user.id)
+    user_exists = user_data is not None
+    has_contact = user_exists and 'phone' in user_data and user_data['phone']
+
+    # Сохраняем пользователя в базе данных (обновляем информацию)
     db.save_user(
         telegram_id=user.id,
         username=user.username,
@@ -58,25 +63,66 @@ async def start_handler(message: Message, state: FSMContext):
         language_code=user.language_code
     )
 
-    # Получаем информацию о пользователе
+    # Обновляем информацию о пользователе
     user_data = db.get_user(user.id)
 
-    # Проверяем реферальный код в команде /start
-    referral_code = message.text.split()[1] if len(message.text.split()) > 1 else None
+    # Проверяем реферальный код в команде /start только для новых пользователей
+    if not user_exists:
+        referral_code = message.text.split()[1] if len(message.text.split()) > 1 else None
+        if referral_code:
+            referral_info = db.get_referral(referral_code)
+            if referral_info and referral_info['telegram_id'] != user.id:
+                # Добавляем бонусные запросы пригласившему пользователю
+                db.add_requests(referral_info['telegram_id'], REFERRAL_BONUS_REQUESTS)
 
-    if referral_code:
-        referral_info = db.get_referral(referral_code)
-        if referral_info and referral_info['telegram_id'] != user.id:
-            # Добавляем бонусные запросы пригласившему пользователю
-            db.add_requests(referral_info['telegram_id'], REFERRAL_BONUS_REQUESTS)
-
-    # Генерируем реферальный код для пользователя
+    # Генерируем реферальный код для пользователя, если его еще нет
     if not db.get_referral(user.id):
         ref_base = f"{user.id}_{uuid.uuid4()}"
         ref_code = hashlib.md5(ref_base.encode()).hexdigest()[:8]
         db.create_referral(user.id, ref_code)
 
-    # Создаем приветственное сообщение
+    # Получаем реферальные данные
+    ref_data = db.get_referral(user.id)
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/testik_ai_bot?start={ref_data['referral_code']}" if ref_data else ""
+
+    # Если пользователь уже есть в базе и у него есть контакт, показываем только баланс и реферальную ссылку
+    if has_contact:
+        balance_text = (
+            f"👋 Здравствуйте, {user.first_name}!\n\n"
+            f"🎉 Ваш баланс: {user_data['requests_left']} запросов.\n\n"
+            f"Реферальная ссылка:\n{ref_link}\n\n"
+            f"Приглашайте друзей и получайте {REFERRAL_BONUS_REQUESTS} бонусных запросов за каждого!"
+        )
+
+        # Создаем инлайн клавиатуру
+        inline_keyboard = []
+
+        if MINI_APP_URL:
+            inline_keyboard.append([
+                InlineKeyboardButton(
+                    text="🌐 Открыть мини-приложение",
+                    web_app=WebAppInfo(url=MINI_APP_URL)
+                )
+            ])
+
+        # Добавляем кнопку копирования реферальной ссылки
+        if ref_data:
+            inline_keyboard.append([
+                InlineKeyboardButton(
+                    text="🔗 Скопировать реферальную ссылку",
+                    callback_data=f"copy_ref:{ref_data['referral_code']}"
+                )
+            ])
+
+        # Создаем инлайн разметку, если есть кнопки
+        inline_markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard) if inline_keyboard else None
+
+        # Отправляем сообщение о балансе и реферальную ссылку
+        await message.answer(balance_text, reply_markup=inline_markup)
+        return
+
+    # Для новых пользователей или без контакта - стандартный процесс регистрации
     welcome_text = (
         f"👋 Здравствуйте, {user.first_name}!\n\n"
         "Добро пожаловать в наш бот!\n"
@@ -95,10 +141,7 @@ async def start_handler(message: Message, state: FSMContext):
         ])
 
     # Добавляем кнопку реферальной ссылки
-    ref_data = db.get_referral(user.id)
     if ref_data:
-        bot_info = await bot.get_me()
-        ref_link = f"https://t.me/{bot_info.username}?start={ref_data['referral_code']}"
         inline_keyboard.append([
             InlineKeyboardButton(
                 text="🔗 Скопировать реферальную ссылку",
@@ -148,7 +191,7 @@ async def start_handler(message: Message, state: FSMContext):
 async def handle_copy_ref(callback: CallbackQuery):
     ref_code = callback.data.split(":")[1]
     bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start={ref_code}"
+    ref_link = f"https://t.me/testik_ai_bot?start={ref_code}"
 
     await callback.message.answer(
         f"🔗 Ваша реферальная ссылка:\n\n{ref_link}\n\n"
@@ -169,11 +212,19 @@ async def process_contact(message: Message, state: FSMContext):
         user = db.get_user(message.from_user.id)
         requests_left = user.get('requests_left', 0) if user else 0
 
-        # Отправляем сообщение об успешной регистрации, без клавиатуры
-        await message.answer(
+        # Получаем реферальные данные
+        ref_data = db.get_referral(message.from_user.id)
+        ref_link = f"https://t.me/testik_ai_bot?start={ref_data['referral_code']}" if ref_data else ""
+
+        # Текст сообщения с балансом и реферальной ссылкой
+        complete_text = (
             f"✅ Спасибо! Ваш контакт успешно сохранен.\n\n"
-            f"🎉 У вас есть {requests_left} доступных запросов."
+            f"🎉 У вас есть {requests_left} доступных запросов.\n\n"
+            f"Реферальная ссылка:\n{ref_link}"
         )
+
+        # Отправляем сообщение
+        await message.answer(complete_text)
 
         # Сбрасываем состояние
         await state.clear()
