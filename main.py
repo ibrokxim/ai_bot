@@ -7,6 +7,14 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 from database_bot import BotDatabase
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -27,6 +35,9 @@ db = BotDatabase(
     password=os.getenv('DB_PASSWORD'),
     database=os.getenv('DB_NAME')
 )
+
+class UserState(StatesGroup):
+    waiting_for_contact = State()
 
 @dp.message(CommandStart())
 async def start_handler(message: Message):
@@ -113,6 +124,81 @@ async def handle_copy_ref(callback: CallbackQuery):
         "бонусных запросов за каждого нового пользователя!"
     )
     await callback.answer()
+
+@dp.message_handler(commands=['start'])
+async def cmd_start(message: Message):
+    # Сохраняем базовую информацию о пользователе
+    db.save_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        last_name=message.from_user.last_name,
+        chat_id=message.chat.id,
+        is_bot=message.from_user.is_bot,
+        language_code=message.from_user.language_code
+    )
+
+    # Создаем клавиатуру с кнопкой запроса контакта
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button = types.KeyboardButton("📱 Поделиться контактом", request_contact=True)
+    keyboard.add(button)
+
+    # Отправляем приветственное сообщение
+    await message.answer(
+        f"👋 Здравствуйте, {message.from_user.first_name}!\n\n"
+        "Для начала работы с ботом, пожалуйста, поделитесь своим контактным номером, "
+        "нажав на кнопку ниже.\n\n"
+        "🔒 Ваш номер будет использоваться только для связи с вами и не будет передан третьим лицам.",
+        reply_markup=keyboard
+    )
+    
+    # Устанавливаем состояние ожидания контакта
+    await UserState.waiting_for_contact.set()
+
+@dp.message_handler(content_types=['contact'], state=UserState.waiting_for_contact)
+async def process_contact(message: Message, state: FSMContext):
+    if message.contact is not None:
+        # Сохраняем контакт в базу данных
+        contact = message.contact.phone_number
+        db.save_contact(message.from_user.id, contact)
+        
+        # Получаем информацию о количестве доступных запросов
+        user = db.get_user(message.from_user.id)
+        requests_left = user.get('requests_left', 0) if user else 0
+
+        # Создаем обычную клавиатуру для дальнейшего взаимодействия
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard.add(types.KeyboardButton("🔍 Начать поиск"))
+        keyboard.add(types.KeyboardButton("💫 Мои запросы"))
+        keyboard.add(types.KeyboardButton("ℹ️ Помощь"))
+
+        # Отправляем сообщение об успешной регистрации
+        await message.answer(
+            f"✅ Спасибо! Ваш контакт успешно сохранен.\n\n"
+            f"🎉 У вас есть {requests_left} доступных запросов.\n\n"
+            f"Выберите действие из меню ниже:",
+            reply_markup=keyboard
+        )
+        
+        # Сбрасываем состояние
+        await state.finish()
+    else:
+        await message.answer(
+            "❌ Произошла ошибка при получении контакта. Пожалуйста, попробуйте еще раз, "
+            "нажав на кнопку 'Поделиться контактом'."
+        )
+
+@dp.message_handler(state=UserState.waiting_for_contact)
+async def process_invalid_contact(message: Message):
+    """Обработка любых сообщений в состоянии ожидания контакта"""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button = types.KeyboardButton("📱 Поделиться контактом", request_contact=True)
+    keyboard.add(button)
+    
+    await message.answer(
+        "⚠️ Пожалуйста, поделитесь своим контактом, используя специальную кнопку ниже.",
+        reply_markup=keyboard
+    )
 
 async def main():
     print("Бот запущен...")
