@@ -177,6 +177,37 @@ class BotDatabase:
             self.conn.rollback()
             return False
 
+    def save_contact(self, telegram_id: int, contact: str) -> bool:
+        """Сохранение контакта пользователя"""
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute('''
+                    UPDATE users 
+                    SET contact = %s
+                    WHERE telegram_id = %s
+                ''', (contact, telegram_id))
+                
+                self.conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении контакта пользователя: {str(e)}")
+            self.conn.rollback()
+            return False
+
+    def get_user_contact(self, telegram_id: int) -> Optional[str]:
+        """Получение контакта пользователя"""
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT contact FROM users WHERE telegram_id = %s",
+                    (telegram_id,)
+                )
+                result = cursor.fetchone()
+                return result['contact'] if result else None
+        except Exception as e:
+            logger.error(f"Ошибка при получении контакта пользователя: {str(e)}")
+            return None
+
     def close(self):
         """Закрытие соединения с базой данных"""
         if self.conn:
