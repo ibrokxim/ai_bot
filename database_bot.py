@@ -81,12 +81,12 @@ class BotDatabase:
                         telegram_id
                     ))
                 else:
-                    # Создаем нового пользователя
+                    # Создаем нового пользователя с 3 начальными запросами
                     cursor.execute('''
                         INSERT INTO users (
                             telegram_id, username, first_name, last_name,
-                            chat_id, is_bot, language_code, is_active
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
+                            chat_id, is_bot, language_code, is_active, requests_left
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 3)
                     ''', (
                         telegram_id, username, first_name, last_name,
                         chat_id, is_bot, language_code

@@ -14,7 +14,7 @@ load_dotenv()
 # Инициализация бота и диспетчера
 TOKEN = os.getenv('BOT_TOKEN')
 MINI_APP_URL = os.getenv('MINI_APP_URL')
-REFERRAL_BONUS_REQUESTS = int(os.getenv('REFERRAL_BONUS_REQUESTS', 5))
+REFERRAL_BONUS_REQUESTS = int(os.getenv('REFERRAL_BONUS_REQUESTS', 3))
 
 bot = Bot(token=TOKEN)
 storage = MemoryStorage()
