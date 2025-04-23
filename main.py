@@ -50,7 +50,7 @@ async def start_handler(message: Message, state: FSMContext):
     # Проверяем, есть ли пользователь в базе и есть ли у него контакт
     user_data = db.get_user(user.id)
     user_exists = user_data is not None
-    has_contact = user_exists and 'phone' in user_data and user_data['phone']
+    has_contact = user_exists and 'contact' in user_data and user_data['contact']
 
     # Сохраняем пользователя в базе данных (обновляем информацию)
     db.save_user(
@@ -83,7 +83,6 @@ async def start_handler(message: Message, state: FSMContext):
 
     # Получаем реферальные данные
     ref_data = db.get_referral(user.id)
-    bot_info = await bot.get_me()
     ref_link = f"https://t.me/testik_ai_bot?start={ref_data['referral_code']}" if ref_data else ""
 
     # Если пользователь уже есть в базе и у него есть контакт, показываем только баланс и реферальную ссылку
@@ -190,7 +189,6 @@ async def start_handler(message: Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("copy_ref:"))
 async def handle_copy_ref(callback: CallbackQuery):
     ref_code = callback.data.split(":")[1]
-    bot_info = await bot.get_me()
     ref_link = f"https://t.me/testik_ai_bot?start={ref_code}"
 
     await callback.message.answer(
