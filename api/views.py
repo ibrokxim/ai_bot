@@ -994,7 +994,7 @@ class ReferralLinkView(APIView):
             
             # Формируем реферальную ссылку
             bot_username = settings.BOT_USERNAME
-            referral_link = f"https://t.me/{bot_username}?start={referral_code}"
+            referral_link = f"https://t.me/testik_ai_bot?start={referral_code}"
             
             return Response({
                 'success': True,
