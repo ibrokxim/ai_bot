@@ -3,13 +3,13 @@ import logging
 import os
 import uuid
 
-from aiogram import F
+from aiogram import F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from dotenv import load_dotenv
 
 from database_bot import BotDatabase
@@ -220,9 +220,9 @@ async def process_contact(message: Message, state: FSMContext):
             f"🎉 У вас есть {requests_left} доступных запросов.\n\n"
             f"Реферальная ссылка:\n{ref_link}"
         )
-
+        remove_keyboard = types.ReplyKeyboardRemove()
         # Отправляем сообщение
-        await message.answer(complete_text)
+        await message.answer(complete_text, reply_markup=remove_keyboard)
 
         # Сбрасываем состояние
         await state.clear()
