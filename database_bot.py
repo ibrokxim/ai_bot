@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Optional, Dict, Any
 import pymysql
 import pymysql.cursors
@@ -100,6 +101,48 @@ class BotDatabase:
             self.conn.rollback()
             return False
 
+    def get_user_chat_id(self, telegram_id: int) -> Optional[int]:
+        """Получение chat_id пользователя по его telegram_id"""
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT chat_id FROM users WHERE telegram_id = %s",
+                    (telegram_id,)
+                )
+                result = cursor.fetchone()
+                return result['chat_id'] if result and result['chat_id'] else None
+        except Exception as e:
+            logger.error(f"Ошибка при получении chat_id пользователя {telegram_id}: {str(e)}")
+            return None
+
+    def record_referral(
+            self,
+            referrer_id: int,  # user_id пригласившего (из users)
+            referred_id: int,  # user_id приглашенного (из users)
+            referral_code_id: int,  # id реферального кода (из referral_codes)
+            referral_code: str,  # сам реферальный код
+            bonus_requests_added: int
+    ) -> bool:
+        """Запись информации о реферальном переходе в историю"""
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute('''
+                    INSERT INTO referral_history (
+                        referrer_id, referred_id, referral_code_id, referral_code,
+                        bonus_requests_added, conversion_status, created_at, converted_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    referrer_id, referred_id, referral_code_id, referral_code,
+                    bonus_requests_added, 'completed', datetime.now(), datetime.now()
+                ))
+                self.conn.commit()
+                logger.info(f"Реферальный переход записан: {referrer_id} -> {referred_id} (code: {referral_code})")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при записи реферального перехода: {str(e)}")
+            self.conn.rollback()
+            return False
+
     def create_referral(self, telegram_id: int, referral_code: str) -> bool:
         """Создание реферального кода для пользователя"""
         try:
@@ -162,19 +205,39 @@ class BotDatabase:
             logger.error(f"Ошибка при получении реферального кода пользователя: {str(e)}")
             return None
 
+    # def get_referral(self, referral_code: str) -> Optional[Dict[str, Any]]:
+    #     """Получение информации о реферальном коде"""
+    #     try:
+    #         with self.conn.cursor() as cursor:
+    #             cursor.execute('''
+    #                 SELECT rc.*, u.telegram_id
+    #                 FROM referral_codes rc
+    #                 JOIN users u ON rc.user_id = u.user_id
+    #                 WHERE rc.code = %s AND rc.is_active = 1
+    #             ''', (referral_code,))
+    #             return cursor.fetchone()
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении реферального кода: {str(e)}")
+    #         return None
+
     def get_referral(self, referral_code: str) -> Optional[Dict[str, Any]]:
-        """Получение информации о реферальном коде"""
+        """Получение информации о реферальном коде (включая user_id и id кода)"""
         try:
             with self.conn.cursor() as cursor:
+                # Убедимся, что выбираем user_id и id из referral_codes
                 cursor.execute('''
-                    SELECT rc.*, u.telegram_id
+                    SELECT
+                        rc.id AS referral_code_id,
+                        rc.user_id AS referrer_user_id,
+                        rc.code,
+                        u.telegram_id AS referrer_telegram_id
                     FROM referral_codes rc
                     JOIN users u ON rc.user_id = u.user_id
                     WHERE rc.code = %s AND rc.is_active = 1
                 ''', (referral_code,))
                 return cursor.fetchone()
         except Exception as e:
-            logger.error(f"Ошибка при получении реферального кода: {str(e)}")
+            logger.error(f"Ошибка при получении реферального кода '{referral_code}': {str(e)}")
             return None
 
     def get_user_referral(self, telegram_id):
