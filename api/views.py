@@ -1,8 +1,7 @@
 from django.conf import settings
-from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,11 +15,9 @@ from .serializers import (
     BotUserSerializer, PlanSerializer, UserPlanSerializer, RequestUsageSerializer,
     UserStatisticsSerializer, PaymentSerializer,
     UserRegistrationSerializer, UserLoginSerializer, PromoValidationSerializer,
-    UseRequestSerializer, ChatSerializer, ChatMessageSerializer
+    UseRequestSerializer, ChatSerializer, ChatMessageSerializer, UserContactSerializer
 )
 
-# Настройте ваш OpenAI API ключ
-# ВАЖНО: Перенесите ключ в переменные окружения или settings.py для безопасности!
 openai.api_key = settings.OPENAI_API_KEY
 
 
@@ -65,6 +62,38 @@ class RequestUsageViewSet(viewsets.ModelViewSet):
         if self.request.user.is_staff:
             return RequestUsage.objects.all()
         return RequestUsage.objects.filter(user=self.request.user)
+
+
+class UserContactView(generics.RetrieveUpdateAPIView):
+    """
+    API для получения (GET) и обновления (PUT/PATCH)
+    контакта текущего аутентифицированного пользователя.
+    """
+    serializer_class = UserContactSerializer
+    authentication_classes = [TelegramIDAuthentication]
+    permission_classes = [CustomIsAuthenticated, IsTelegramUser] # Доступ только у самого пользователя
+
+    def get_object(self):
+        """
+        Возвращает объект текущего пользователя.
+        RetrieveUpdateAPIView ожидает получить один объект.
+        """
+        # self.request.user устанавливается TelegramIDAuthentication
+        user = self.request.user
+        # Дополнительная проверка, что пользователь действительно найден
+        if not isinstance(user, BotUser):
+            raise generics.NotFound("Пользователь не найден или не аутентифицирован.")
+        # Проверяем права доступа еще раз (хотя permission_classes это делают)
+        self.check_object_permissions(self.request, user)
+        return user
+
+    def get_queryset(self):
+        # Этот метод формально нужен для RetrieveUpdateAPIView,
+        # но т.к. мы переопределили get_object, он не будет напрямую использоваться
+        # для получения объекта. Вернем queryset с одним пользователем для консистентности.
+        if self.request.user.is_authenticated and isinstance(self.request.user, BotUser):
+            return BotUser.objects.filter(pk=self.request.user.pk)
+        return BotUser.objects.none()
 
 
 class UserStatisticsViewSet(viewsets.ReadOnlyModelViewSet):

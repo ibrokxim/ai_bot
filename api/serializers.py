@@ -87,6 +87,17 @@ class UserRegistrationSerializer(serializers.Serializer):
     referral_code = serializers.CharField(required=False, allow_blank=True)
 
 
+class UserContactSerializer(serializers.ModelSerializer):
+    """Сериализатор для получения и обновления контакта пользователя"""
+    class Meta:
+        model = BotUser
+        fields = ['contact']
+        # Добавляем параметры, если нужно разрешить пустое значение или null
+        extra_kwargs = {
+            'contact': {'required': False, 'allow_blank': True, 'allow_null': True}
+        }
+
+
 class UserLoginSerializer(serializers.Serializer):
     """Сериализатор для авторизации пользователя"""
     telegram_id = serializers.IntegerField(required=True)

@@ -29,7 +29,7 @@ urlpatterns = [
     # Информация о текущем пользователе
     path('me/', views.CurrentUserView.as_view(), name='current-user'),
     path('me/history/', views.UserRequestHistoryView.as_view(), name='user-request-history'),
-    
+    path('user/contact/', views.UserContactView.as_view(), name='user-contact'),
     # Реферальная система
     path('referrals/', views.ReferralsView.as_view(), name='referrals'),
     
