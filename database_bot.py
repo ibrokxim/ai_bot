@@ -7,6 +7,7 @@ import pymysql.cursors
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('bot.database')
 
+
 class BotDatabase:
     def __init__(self, host: str, user: str, password: str, database: str):
         """Инициализация подключения к базе данных"""
@@ -45,14 +46,14 @@ class BotDatabase:
             return None
 
     def save_user(
-        self,
-        telegram_id: int,
-        username: str = None,
-        first_name: str = None,
-        last_name: str = None,
-        chat_id: int = None,
-        is_bot: bool = False,
-        language_code: str = None,
+            self,
+            telegram_id: int,
+            username: str = None,
+            first_name: str = None,
+            last_name: str = None,
+            chat_id: int = None,
+            is_bot: bool = False,
+            language_code: str = None,
     ) -> bool:
         """Сохранение информации о пользователе"""
         try:
@@ -146,6 +147,21 @@ class BotDatabase:
             self.conn.rollback()
             return False
 
+    def get_user_referral_code(self, telegram_id: int) -> Optional[str]:
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT rc.code
+                    FROM referral_codes rc
+                    JOIN users u ON rc.user_id = u.user_id
+                    WHERE u.telegram_id = %s AND rc.is_active = 1
+                ''', (telegram_id,))
+                result = cursor.fetchone()
+                return result['code'] if result else None
+        except Exception as e:
+            logger.error(f"Ошибка при получении реферального кода пользователя: {str(e)}")
+            return None
+
     def get_referral(self, referral_code: str) -> Optional[Dict[str, Any]]:
         """Получение информации о реферальном коде"""
         try:
@@ -160,6 +176,12 @@ class BotDatabase:
         except Exception as e:
             logger.error(f"Ошибка при получении реферального кода: {str(e)}")
             return None
+
+    def get_user_referral(self, telegram_id):
+        """Получает реферальный код пользователя по его telegram_id"""
+        query = "SELECT * FROM referrals WHERE telegram_id = %s"
+        result = self.execute_query(query, (telegram_id,), fetch=True)
+        return result[0] if result else None
 
     def add_requests(self, telegram_id: int, amount: int) -> bool:
         """Добавление бонусных запросов пользователю"""
@@ -186,7 +208,7 @@ class BotDatabase:
                     SET contact = %s
                     WHERE telegram_id = %s
                 ''', (contact, telegram_id))
-                
+
                 self.conn.commit()
                 return True
         except Exception as e:
@@ -212,4 +234,4 @@ class BotDatabase:
         """Закрытие соединения с базой данных"""
         if self.conn:
             self.conn.close()
-            self.conn = None 
+            self.conn = None

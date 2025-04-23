@@ -3,7 +3,7 @@ import logging
 import os
 import uuid
 
-from aiogram import F, types
+from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -82,8 +82,8 @@ async def start_handler(message: Message, state: FSMContext):
         db.create_referral(user.id, ref_code)
 
     # Получаем реферальные данные
-    ref_data = db.get_referral(user.id)
-    ref_link = f"https://t.me/testik_ai_bot?start={ref_data['referral_code']}" if ref_data else ""
+    ref_data = db.get_user_referral_code(user.id)
+    ref_link = f"https://t.me/testik_ai_bot?start={ref_data}" if ref_data else ""
 
     # Если пользователь уже есть в базе и у него есть контакт, показываем только баланс и реферальную ссылку
     if has_contact:
@@ -110,7 +110,7 @@ async def start_handler(message: Message, state: FSMContext):
             inline_keyboard.append([
                 InlineKeyboardButton(
                     text="🔗 Скопировать реферальную ссылку",
-                    callback_data=f"copy_ref:{ref_data['referral_code']}"
+                    callback_data=f"copy_ref:{ref_data}"
                 )
             ])
 
@@ -144,7 +144,7 @@ async def start_handler(message: Message, state: FSMContext):
         inline_keyboard.append([
             InlineKeyboardButton(
                 text="🔗 Скопировать реферальную ссылку",
-                callback_data=f"copy_ref:{ref_data['referral_code']}"
+                callback_data=f"copy_ref:{ref_data}"
             )
         ])
 
@@ -211,8 +211,8 @@ async def process_contact(message: Message, state: FSMContext):
         requests_left = user.get('requests_left', 0) if user else 0
 
         # Получаем реферальные данные
-        ref_data = db.get_referral(message.from_user.id)
-        ref_link = f"https://t.me/testik_ai_bot?start={ref_data['referral_code']}" if ref_data else ""
+        ref_code = db.get_user_referral_code(message.from_user.id)
+        ref_link = f"https://t.me/testik_ai_bot?start={ref_code}" if ref_code else ""
 
         # Текст сообщения с балансом и реферальной ссылкой
         complete_text = (
