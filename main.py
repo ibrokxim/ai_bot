@@ -76,7 +76,7 @@ async def start_handler(message: Message, state: FSMContext):
                 db.add_requests(referral_info['telegram_id'], REFERRAL_BONUS_REQUESTS)
 
     # Генерируем реферальный код для пользователя, если его еще нет
-    if not db.get_referral(user.id):
+    if not db.get_user_referral_code(user.id):
         ref_base = f"{user.id}_{uuid.uuid4()}"
         ref_code = hashlib.md5(ref_base.encode()).hexdigest()[:8]
         db.create_referral(user.id, ref_code)
