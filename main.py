@@ -90,7 +90,7 @@ async def start_handler(message: Message, state: FSMContext):
         balance_text = (
             f"👋 Здравствуйте, {user.first_name}!\n\n"
             f"🎉 Ваш баланс: {user_data['requests_left']} запросов.\n\n"
-            f"[Ваша реферальная ссылка]({ref_link})\n\n"
+            f"Реферальная ссылка:\n{ref_link}\n\n"
             f"Приглашайте друзей и получайте {REFERRAL_BONUS_REQUESTS} бонусных запросов за каждого!"
         )
 
@@ -118,7 +118,7 @@ async def start_handler(message: Message, state: FSMContext):
         inline_markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard) if inline_keyboard else None
 
         # Отправляем сообщение о балансе и реферальную ссылку
-        await message.answer(balance_text, reply_markup=inline_markup, parse_mode="MarkdownV2")
+        await message.answer(balance_text, reply_markup=inline_markup)
         return
 
     # Для новых пользователей или без контакта - стандартный процесс регистрации
@@ -150,7 +150,7 @@ async def start_handler(message: Message, state: FSMContext):
 
         welcome_text += (
             f"\n🔗 Ваша реферальная ссылка:\n"
-            f"[Реферальная ссылка]{ref_link}\n\n"
+            f"{ref_link}\n\n"
             f"Приглашайте друзей и получайте {REFERRAL_BONUS_REQUESTS} бонусных запросов за каждого!"
         )
 
@@ -175,7 +175,7 @@ async def start_handler(message: Message, state: FSMContext):
 
     # Отправляем сначала сообщение с инлайн кнопками (если есть)
     if inline_markup:
-        await message.answer(welcome_text, reply_markup=inline_markup, parse_mode="MarkdownV2")
+        await message.answer(welcome_text, reply_markup=inline_markup)
     else:
         await message.answer(welcome_text)
 
