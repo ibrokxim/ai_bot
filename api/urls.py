@@ -32,7 +32,7 @@ urlpatterns = [
     path('user/contact/', views.UserContactView.as_view(), name='user-contact'),
     # Реферальная система
     path('referrals/', views.ReferralsView.as_view(), name='referrals'),
-    
+    path('referrals/stats/', views.ReferralStatsView.as_view(), name='referral-stats'),
     # Прямой доступ по telegram_id (без JWT)
     path('telegram/requests/', views.DirectTelegramRequestsView.as_view(), name='telegram-requests'),
     path('telegram/use-request/', views.UseRequestByTelegramIDView.as_view(), name='telegram-use-request'),

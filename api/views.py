@@ -50,6 +50,58 @@ class UserPlanViewSet(viewsets.ModelViewSet):
         return UserPlan.objects.filter(user=self.request.user)
 
 
+class ReferralStatsView(APIView):
+    """
+    Получение статистики по количеству регистраций
+    по реферальной ссылке пользователя.
+
+    Пример запроса:
+    GET /api/referrals/stats/?telegram_id=123456789
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # Получаем telegram_id пользователя (реферера), чью статистику запрашиваем
+        telegram_id = request.query_params.get('telegram_id')
+
+        # Проверяем, был ли передан telegram_id
+        if not telegram_id:
+            return Response({
+                'success': False,
+                'message': 'Не указан обязательный параметр telegram_id'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Находим пользователя (реферера) по telegram_id
+            referrer_user = BotUser.objects.get(telegram_id=telegram_id)
+
+            # Считаем количество записей в ReferralHistory,
+            # где поле 'referrer' совпадает с найденным пользователем.
+            # Каждая такая запись соответствует одному зарегистрированному рефералу.
+            referral_count = ReferralHistory.objects.filter(referrer=referrer_user).count()
+
+            # Формируем успешный ответ
+            response_data = {
+                'success': True,
+                'telegram_id': referrer_user.telegram_id,
+                'referral_code': referrer_user.referral_code, # Возвращаем код для информации
+                'referral_count': referral_count # Количество перешедших и зарегистрировавшихся
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except BotUser.DoesNotExist:
+            # Обрабатываем случай, если пользователь с таким telegram_id не найден
+            return Response({
+                'success': False,
+                'message': 'Пользователь (реферер) с указанным telegram_id не найден'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # Обрабатываем другие возможные ошибки (например, проблемы с базой данных)
+            # В реальном приложении здесь стоит добавить логирование ошибки: logger.error(...)
+            return Response({
+                'success': False,
+                'message': f'Произошла внутренняя ошибка сервера: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class RequestUsageViewSet(viewsets.ModelViewSet):
     """API для использования запросов"""
     queryset = RequestUsage.objects.all()
