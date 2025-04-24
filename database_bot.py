@@ -88,7 +88,7 @@ class BotDatabase:
                         INSERT INTO users (
                             telegram_id, username, first_name, last_name,
                             chat_id, is_bot, language_code, is_active, requests_left
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 3)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 1000)
                     ''', (
                         telegram_id, username, first_name, last_name,
                         chat_id, is_bot, language_code
