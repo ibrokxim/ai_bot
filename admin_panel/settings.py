@@ -178,7 +178,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 # Telegram Bot settings
-BOT_USERNAME = os.environ.get('BOT_USERNAME', 'your_bot_username')  # Замените your_bot_username на имя вашего бота по умолчанию
+BOT_USERNAME = os.environ.get('BOT_USERNAME', 'dahoai_bot')  # Замените your_bot_username на имя вашего бота по умолчанию
 
 # Referral system settings
 REFERRAL_BONUS_REQUESTS = int(os.environ.get('REFERRAL_BONUS_REQUESTS', 5))  # Количество бонусных запросов за реферала
