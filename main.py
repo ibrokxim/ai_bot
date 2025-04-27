@@ -19,7 +19,17 @@ from dotenv import load_dotenv
 
 from database_bot import BotDatabase
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_directory = "logs"
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+log_file_path = os.path.join(log_directory, "bot.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename=log_file_path,
+    filemode='a'
+)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
