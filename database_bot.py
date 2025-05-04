@@ -170,14 +170,14 @@ class BotDatabase:
 
             if user_exists:
                 cursor.execute('''
-                    UPDATE users SET username = %s, first_name = %s, last_name = %s, chat_id = %s, is_bot = %s, language_code = %s, last_seen = NOW()
+                    UPDATE users SET username = %s, first_name = %s, last_name = %s, chat_id = %s, is_bot = %s, language_code = %s
                     WHERE telegram_id = %s
                 ''', (username, first_name, last_name, chat_id, is_bot, language_code, telegram_id))
                 logger.info(f"Обновлен пользователь {telegram_id}")
             else:
                 cursor.execute('''
-                    INSERT INTO users (telegram_id, username, first_name, last_name, chat_id, is_bot, language_code, is_active, requests_left, registration_date, last_seen)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 1000, NOW(), NOW())
+                    INSERT INTO users (telegram_id, username, first_name, last_name, chat_id, is_bot, language_code, is_active, requests_left, registration_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 1000, NOW())
                 ''', (telegram_id, username, first_name, last_name, chat_id, is_bot, language_code))
                 logger.info(f"Создан пользователь {telegram_id}")
 
